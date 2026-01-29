@@ -1,0 +1,124 @@
+﻿key,en,hr,de,fr,es
+Main Menu,Main Menu,Glavni izbornik,Hauptmenü,Menu principal,Menú principal
+Settings,Settings,Postavke,Einstellungen,Paramètres,Ajustes
+Stopwatch,Stopwatch,Zaporni sat,Stoppuhr,Chronomètre,Cronómetro
+Gate Period,Gate Period,Period vrata,Tor‑Periode,Période de la barrière,Periodo de puerta
+Gate Frequency,Gate Frequency,Frekvencija vrata,Tor‑Frequenz,Fréquence de la barrière,Frecuencia de puerta
+Gate Interval,Gate Interval,Interval vrata,Tor‑Intervall,Intervalle de la barrière,Intervalo de puerta
+Gate Count,Gate Count,Broj vrata,Tor‑Zähler,Compteur de barrières,Conteo de puerta
+Start/Stop,Start/Stop,Start/Stop,Start/Stopp,Démarrer/Arrêter,Iniciar/Parar
+Start,Start,Start,Start,Démarrer,Iniciar
+Reset,Reset,Resetiraj,Zurücksetzen,Réinitialiser,Reiniciar
+Capture,Capture,Zabilježi,Erfassen,Capturer,Capturar
+First signal,First signal,Prvi signal,Erstes Signal,Premier signal,Primer señal
+Period,Period,Perioda,Periode,Période,Período
+Freq,Freq,Frekv.,Frequ.,Fréq.,Freq.
+Waiting for signal,Waiting for signal,Čekanje signala,Warte auf Signal,En attente du signal,Esperando señal
+Count,Count,Broj,Zähler,Compte,Cuenta
+Wifi Settings,Wifi Settings,Wifi postavke,Wifi Einstellungen,Paramètres Wifi,Ajustes Wifi
+Not connected,Not connected,Nije povezano,Nicht verbunden,Non connecté,No conectado
+Scan,Scan,Skeniraj,Scannen,Scanner,Escanear
+Disconnect,Disconnect,Prekini vezu,Trennen,Déconnecter,Desconectar
+Language,Language,Jezik,Sprache,Langue,Idioma
+Language changed,Language changed,Jezik promijenjen,Sprache geändert,Langue modifiée,Idioma cambiado
+Select,Select,Odaberi,Auswählen,Sélection,Seleccionar
+Next,Next,Sljedeće,Weiter,Suivant,Siguiente
+Back,Back,Natrag,Zurück,Retour,Atrás
+Linear Motion (CV),Linear Motion (CV),Jednoliko gibanje,Gleichförmige Bewegung (CV),Mouvement linéaire (CV),Movimiento lineal (CV)
+Photogate Speed,Photogate Speed,Fotoprekidač brzina,Lichtschranken‑Geschw.,Vitesse barrière optique,Velocidad fotopuerta
+Uniform Acceleration,Uniform Acceleration,Jednoliko ubrzanje,Gleichmäßige Beschleun.,Accélération uniforme,Aceleración uniforme
+Uniform Acceleration (UA),Uniform Acceleration (UA),Jednoliko ubrzanje (UA),Gleichmäßige Beschl. (UA),Accélération uniforme (UA),Aceleración uniforme (UA)
+Free Fall,Free Fall,Slobodni pad,Freier Fall,Chute libre,Caída libre
+Inclined Plane,Inclined Plane,Gibanje na kosini,Schiefe Ebene,Plan incliné,Plano inclinado
+Tachometer,Tachometer,Tahometar,Tachometer,Tachymètre,Tacómetro
+Stopwatch Settings,Stopwatch Settings,Postavke štoperice,Stoppuhr‑Einstellungen,Paramètres du chrono,Ajustes del cronómetro
+CV Settings,CV Settings,Postavke jednoliko gibanje,CV‑Einstellungen,Paramètres CV,Ajustes CV
+Photogate Settings,Photogate Settings,Postavke fotoprekidač brzina,Lichtschranken‑Einst.,Paramètres barrière,Ajustes fotopuerta
+UA Settings,UA Settings,Postavke jednoliko ubrzanje,UA‑Einstellungen,Paramètres AU,Ajustes AU
+Free Fall Settings,Free Fall Settings,Postavke slobodni pad,Freier‑Fall‑Einst.,Paramètres chute libre,Ajustes caída libre
+Inclined Plane Settings,Inclined Plane Settings,Postavke kosina,Schiefe‑Ebene‑Einst.,Paramètres plan incliné,Ajustes plano inclinado
+Tachometer Settings,Tachometer Settings,Postavke tahometra,Tacho‑Einstellungen,Paramètres tachymètre,Ajustes tacómetro
+Start / Stop,Start / Stop,Start / Stop,Start / Stopp,Démarrer / Arrêter,Iniciar / Parar
+Start / Arm,Start / Arm,Start / Aktiviraj,Start / Scharf,Démarrer / Armer,Iniciar / Armar
+Armed,Armed,Aktivno,Scharf,Armé,Armado
+Lap,Lap,Krug,Runde,Tour,Vuelta
+Export CSV,Export CSV,Izvoz CSV,CSV exportieren,Exporter CSV,Exportar CSV
+Save,Save,Spremi,Speichern,Enregistrer,Guardar
+No gate,No gate,Bez vrata,Keine Lichtschranke,Sans barrière,Sin barrera
+Gate A,Gate A,Vrata A,Tor A,Barrière A,Barrera A
+Gate B,Gate B,Vrata B,Tor B,Barrière B,Barrera B
+Gate A+B,Gate A+B,Vrata A+B,Tor A+B,Barrière A+B,Barrera A+B
+Running,Running,Radi,Läuft,En cours,En marcha
+Pulse A,Pulse A,Puls A,Impuls A,Impulsion A,Pulso A
+Block,Block,Blokiraj,Blocken,Bloquer,Bloquear
+Unblock,Unblock,Odblokiraj,Freigeben,Débloquer,Desbloquear
+Wifi,Wifi,Wifi,WLAN,Wi‑Fi,Wifi
+Simulation,Simulation,Simulacija,Simulation,Simulation,Simulación
+Last 10:,Last 10:,Zadnjih 10:,Letzte 10:,10 derniers :,Últimos 10:
+Last 10 Laps:,Last 10 Laps:,Zadnjih 10 krugova:,Letzte 10 Runden:,10 derniers tours :,Últimas 10 vueltas:
+Distance,Distance,Udaljenost,Strecke,Distance,Distancia
+Time,Time,Vrijeme,Zeit,Temps,Tiempo
+Speed,Speed,Brzina,Geschwindigkeit,Vitesse,Velocidad
+Acceleration,Acceleration,Ubrzanje,Beschleunigung,Accélération,Aceleración
+RPM,RPM,O/min,U/min,tr/min,RPM
+Object length (mm):,Object length (mm):,Duljina objekta (mm):,Objektlänge (mm):,Longueur objet (mm) :,Longitud del objeto (mm):
+Gate distance (mm):,Gate distance (mm):,Udalj. vrata (mm):,Torabstand (mm):,Distance des barrières (mm) :,Distancia entre barreras (mm):
+Incline angle (deg):,Incline angle (deg):,Kut nagiba (°):,Neigungswinkel (°):,Angle d’inclinaison (°):,Ángulo de inclinación (°):
+Drop height (mm):,Drop height (mm):,Visina pada (mm):,Fallhöhe (mm):,Hauteur de chute (mm) :,Altura de caída (mm):
+Slots (per revolution):,Slots (per revolution):,Prorezi (po okretu):,Schlitze (pro Umdrehung):,Fentes (par tour) :,Ranuras (por vuelta):
+m/s,m/s,m/s,m/s,m/s,m/s
+m/s²,m/s²,m/s²,m/s²,m/s²,m/s²
+ms,ms,ms,ms,ms,ms
+Speed = Distance / Time,Speed = Distance / Time,Brzina = Udaljenost / Vrijeme,v = s / t,Vitesse = Distance / Temps,Velocidad = Distancia / Tiempo
+Flag length,Flag length,Zastavica,Fahnenlänge,Longueur drapeau,Longitud bandera
+Block time,Block time,Vrijeme bloka,Blockzeit,Temps de blocage,Tiempo de bloqueo
+UA (two-gate): L=%u mm,UA (two-gate): L=%u mm,UA (dvoja vrata): L=%u mm,AU (zwei Schranken): L=%u mm,AU (deux barrières) : L=%u mm,AU (dos barreras): L=%u mm
+v1 = L / τA = %.3f,v1 = L / τA = %.3f,v1 = L / τA = %.3f,v1 = L / τA = %.3f,v1 = L / τA = %.3f,v1 = L / τA = %.3f
+v2 = L / τB = %.3f,v2 = L / τB = %.3f,v2 = L / τB = %.3f,v2 = L / τB = %.3f,v2 = L / τB = %.3f,v2 = L / τB = %.3f
+a = (v2 - v1) / Δt_mid = %.3f m/s²,a = (v2 - v1) / Δt_mid = %.3f m/s²,a = (v2 - v1) / Δt_sred = %.3f m/s²,a = (v2 - v1) / Δt_mitte = %.3f m/s²,a = (v2 - v1) / Δt_milieu = %.3f m/s²,a = (v2 - v1) / Δt_med = %.3f m/s²
+"Free Fall: v = L / τ, g ≈ v^2 / (2 h)","Free Fall: v = L / τ, g ≈ v^2 / (2 h)","Slobodni pad: v = L / τ, g ≈ v^2 / (2 h)","Freier Fall: v = L / τ, g ≈ v^2 / (2 h)","Chute libre : v = L / τ, g ≈ v^2 / (2 h)","Caída libre: v = L / τ, g ≈ v^2 / (2 h)"
+"Free Fall: v = L / τ, g ≈ v² / (2 h)","Free Fall: v = L / τ, g ≈ v² / (2 h)","Slobodni pad: v = L / τ, g ≈ v² / (2 h)","Freier Fall: v = L / τ, g ≈ v² / (2 h)","Chute libre : v = L / τ, g ≈ v² / (2 h)","Caída libre: v = L / τ, g ≈ v² / (2 h)"
+"Tachometer: RPM = 60,000 / (Period_ms × Slots)","Tachometer: RPM = 60,000 / (Period_ms × Slots)",Tahometar: RPM = 60 000 / (Perioda_ms × Prorezi),Tacho: U/min = 60.000 / (ms × Schlitze),Tachy : tr/min = 60 000 / (ms × fentes),Tacómetro: RPM = 60.000 / (ms × ranuras)
+"Inclined Plane: L=%u mm, D=%u mm, %s=%.1f°","Inclined Plane: L=%u mm, D=%u mm, %s=%.1f°","Kosina: L=%u mm, D=%u mm, %s=%.1f°","Schiefe Ebene: L=%u mm, D=%u mm, %s=%.1f°","Plan incliné : L=%u mm, D=%u mm, %s=%.1f°","Plano inclinado: L=%u mm, D=%u mm, %s=%.1f°"
+Theory: a ≈ g·sin(θ) = %.3f m/s² (g=9.81),Theory: a ≈ g·sin(θ) = %.3f m/s² (g=9.81),"Teorija: a ≈ g·sin(θ) = %.3f m/s² (g=9,81)","Theorie: a ≈ g·sin(θ) = %.3f m/s² (g=9,81)","Théorie : a ≈ g·sin(θ) = %.3f m/s² (g=9,81)","Teoría: a ≈ g·sin(θ) = %.3f m/s² (g=9,81)"
+Gate mode:,Gate mode:,Način rada vrata:,Tor‑Modus:,Mode des barrières:,Modo de puertas:
+Stopwatch gate help,"Select how gates control the stopwatch:
+• No gate: use on‑screen Start/Stop.
+• Gate A: Start/Stop on Gate A pulses; pulses also record laps.
+• Gate A+B: Start on Gate A, Stop on Gate B; pulses record laps.
+In gate modes, the Lap button becomes Export CSV.
+Arm is a manual toggle: green while armed (reacts to gates), gray when disarmed (no reaction).","Odaberite kako vrata upravljaju štopericom:
+• Bez vrata: koristite Start/Stop na zaslonu.
+• Vrata A: Start/Stop na impulsima vrata A; impulsi zapisuju krugove.
+• Vrata A+B: Start na vratima A, Stop na vratima B; impulsi zapisuju krugove.
+U načinima s vratima gumb Lap postaje Izvoz CSV.
+Naoružanje je ručno: zeleno kad je naoružano (reagira na vrata), sivo kad je razoružano (ne reagira).","Wählen Sie, wie Tore die Stoppuhr steuern:
+• Kein Tor: Start/Stopp auf dem Bildschirm.
+• Tor A: Start/Stopp auf Impulsen von Tor A; Impulse zeichnen Runden auf.
+• Tor A+B: Start bei Tor A, Stop bei Tor B; Impulse zeichnen Runden auf.
+Im Tor‑Modus wird „Runde“ zu „CSV exportieren“.
+Armen ist manuell: grün wenn scharf (reagiert), grau wenn unscharf (keine Reaktion).","Choisissez comment les barrières contrôlent le chrono :
+• Sans barrière : Start/Stop à l’écran.
+• Barrière A : Start/Stop sur impulsions de la barrière A ; les impulsions enregistrent les tours.
+• Barrière A+B : Start à A, Stop à B ; les impulsions enregistrent les tours.
+En mode barrière, « Tour » devient « Exporter CSV ».
+L’armement est manuel : vert armé (réagit), gris non armé (ne réagit pas).","Elija cómo las barreras controlan el cronómetro:
+• Sin barrera: Start/Stop en pantalla.
+• Barrera A: Start/Stop en pulsos de la barrera A; los pulsos registran vueltas.
+• Barrera A+B: Start en A, Stop en B; los pulsos registran vueltas.
+En modo barrera el botón Lap pasa a Exportar CSV.
+El armado es manual: verde armado (reacciona), gris desarmado (no reacciona)."
+Distance between Gate A and Gate B (mm):,Distance between Gate A and Gate B (mm):,Udaljenost između vrata A i B (mm):,Abstand Tor A–B (mm):,Distance Barrière A–B (mm) :,Distancia Puerta A–B (mm):
+Used to compute speed: v = distance / time.,Used to compute speed: v = distance / time.,Koristi se za izračun brzine: v = Udaljenost / Vrijeme,Zur Berechnung der Geschwindigkeit: v = Strecke / Zeit,Utilisé pour calculer la vitesse : v = Distance / Temps,Para calcular la velocidad: v = Distancia / Tiempo
+Flag length (mm):,Flag length (mm):,Duljina zastavice (mm):,Fahnenlänge (mm):,Longueur drapeau (mm) :,Longitud bandera (mm):
+Length of the object's edge that blocks the light beam.,Length of the object's edge that blocks the light beam.,Duljina ruba objekta koji blokira svjetlosnu zraku.,"Kantenlänge des Objekts, das den Lichtstrahl blockiert.",Longueur de l’arête qui bloque le faisceau.,Longitud del borde que bloquea el haz.
+Blocking edge length.,Blocking edge length.,Duljina bloka ruba.,Blockkanten‑Länge.,Longueur d’arête de blocage.,Longitud de arista de bloqueo.
+Height from release to gate A.,Height from release to gate A.,Visina od ispuštanja do vrata A.,Höhe von Auslösung bis Tor A.,Hauteur de lâcher jusqu’à Barrière A.,Altura desde liberación hasta Puerta A.
+Distance between the beams.,Distance between the beams.,Udaljenost između snopova.,Abstand zwischen den Strahlen.,Distance entre les faisceaux.,Distancia entre haces.
+Ramp angle (for theory/compare).,Ramp angle (for theory/compare).,Kut nagiba (za teoriju/usporedbu).,Neigungswinkel (für Theorie/Vergleich).,Angle d’inclinaison (théorie/comparaison).,Ángulo de inclinación (teoría/comparación).
+Screensaver (s):,Screensaver (s):,Čuvar zaslona (s):,Bildschirmschoner (s):,Économiseur d’écran (s) :,Salvapantallas (s):
+Screensaver time (seconds). Set 0 to disable.,Screensaver time (seconds). Set 0 to disable.,Vrijeme čuvara zaslona (sekunde). Postavite 0 za isključivanje.,Zeit des Bildschirmschoners (Sekunden). 0 deaktiviert.,Durée d’économiseur (s). 0 pour désactiver.,Tiempo de salvapantallas (s). 0 para desactivar.
+Wifi is disabled. Enable Wifi in Settings to scan.,Wifi is disabled. Enable Wifi in Settings to scan.,Wifi je onemogućen. Uključite Wifi u Postavkama za skeniranje.,"WLAN ist deaktiviert. In den Einstellungen aktivieren, um zu scannen.",Le Wi‑Fi est désactivé. Activez‑le dans Paramètres pour scanner.,Wifi desactivado. Actívelo en Ajustes para escanear.
+Wifi scan and connect UI here.,Wifi scan and connect UI here.,Ovdje ide sučelje za Skeniraj/Poveži na Wifi.,Hier erscheint die WLAN Scan/Connect Oberfläche.,Ici s’affiche l’UI de scan/connexion Wi‑Fi.,Aquí aparece el UI de escaneo/conexión Wifi.
+Gate A (hold),Gate A (hold),Vrata A (držanje),Tor A (halten),Barrière A (maintenir),Puerta A (mantener)
+Gate B (hold),Gate B (hold),Vrata B (držanje),Tor B (halten),Barrière B (maintenir),Puerta B (mantener)
