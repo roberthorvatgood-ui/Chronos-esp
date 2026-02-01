@@ -46,7 +46,8 @@ void loop() {
     bool ok0 = expander_digitalRead(EXIO_DI0, level0);
     bool ok1 = expander_digitalRead(EXIO_DI1, level1);
     int64_t t_after = esp_timer_get_time();
-    int64_t t_read = (t_before + t_after) / 2; // approximate read timestamp (microseconds)
+    // Approximate timestamp when reads occurred (actual edge may have happened earlier)
+    int64_t t_read = (t_before + t_after) / 2; // microseconds
 
     if (!ok0 || !ok1) {
         Serial.println("[gates_expander_demo] Expander read failed (is HAL attached?).");
