@@ -29,6 +29,13 @@
   #endif
 #endif
 
+// Forward declare get_level if not in headers
+#ifndef ESP_IO_EXPANDER_H
+extern "C" {
+  esp_err_t esp_io_expander_get_level(esp_io_expander_handle_t handle, uint32_t pin_mask, uint32_t *level);
+}
+#endif
+
 void waveshare_io_test() {
   Serial.println("[EXIO Test] Starting Gate A/B pushbutton test...");
   Serial.println("[EXIO Test] Wiring: EXIO0 (Gate A) and EXIO5 (Gate B) to GND via pushbuttons");
