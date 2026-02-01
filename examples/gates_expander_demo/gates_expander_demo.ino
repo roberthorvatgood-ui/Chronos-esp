@@ -46,12 +46,8 @@ void loop() {
     static bool prev1 = true;
     bool level0 = true, level1 = true;
 
-    int64_t t_before = esp_timer_get_time();
     bool ok0 = expander_digitalRead(EXIO_DI0, level0);
     bool ok1 = expander_digitalRead(EXIO_DI1, level1);
-    int64_t t_after = esp_timer_get_time();
-    // Approximate timestamp (midpoint). Note: I2C latencies may vary between reads.
-    int64_t t_read = (t_before + t_after) / 2;
 
     if (!ok0 || !ok1) {
         Serial.println("[gates_expander_demo] Expander read failed (is HAL attached?).");
@@ -65,14 +61,16 @@ void loop() {
         delay(DEBOUNCE_MS);
         bool confirm = false;
         if (expander_digitalRead(EXIO_DI0, confirm) && !confirm) {
-            Serial.printf("[GATE] DI0 FALL at %" PRIi64 " us (approx)\n", t_read);
+            int64_t t_confirm = esp_timer_get_time();
+            Serial.printf("[GATE] DI0 FALL at %" PRIi64 " us (approx)\n", t_confirm);
         }
     }
     if (prev1 && !level1) {
         delay(DEBOUNCE_MS);
         bool confirm = false;
         if (expander_digitalRead(EXIO_DI1, confirm) && !confirm) {
-            Serial.printf("[GATE] DI1 FALL at %" PRIi64 " us (approx)\n", t_read);
+            int64_t t_confirm = esp_timer_get_time();
+            Serial.printf("[GATE] DI1 FALL at %" PRIi64 " us (approx)\n", t_confirm);
         }
     }
 
