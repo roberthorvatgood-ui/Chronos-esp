@@ -1,7 +1,7 @@
 /*
     gates_expander_demo.ino
     Demo: read DI0/DI1 on CH422G expander via HAL wrapper and print timestamps.
-    Assumes hal::expander_wait_ready() will become true once panel HAL attached expander.
+    Assumes expander_wait_ready() will become true once panel HAL attached expander.
     Uses single-port reads (via expander_digitalRead) and a short debounce.
     Default settings target low-latency optical gates when using the expander only.
 */

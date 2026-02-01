@@ -5,7 +5,9 @@
 
 static const char *TAG = "hal_panel";
 
-// extern or static handle to the platform expander instance
+// Platform expander handle - must be initialized by the platform HAL layer
+// before calling expander_pinMode/digitalWrite/digitalRead functions.
+// TODO: Add initialization function or integrate with platform HAL initialization.
 static esp_io_expander_handle_t s_hal_expander = nullptr;
 
 bool expander_pinMode(uint8_t exio, bool output) {
