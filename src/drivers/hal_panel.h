@@ -23,8 +23,9 @@ bool expander_digitalWrite(uint8_t exio, bool high);
 bool expander_digitalRead(uint8_t exio, bool &out_level);
 
 // Optional helper that waits for the platform HAL to attach/initialize
-// the expander. Implementations may provide it; callers should guard with
-// #ifdef HAL_PANEL_HAS_EXPANDER_WAIT when relying on it.
+// the expander. If HAL_PANEL_HAS_EXPANDER_WAIT is defined by the implementation,
+// expander_wait_ready(timeout_ms) will be available. Callers should use
+// #ifdef HAL_PANEL_HAS_EXPANDER_WAIT to check availability before calling.
 
 #ifdef __cplusplus
 extern "C" {

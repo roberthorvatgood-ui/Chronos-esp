@@ -1,9 +1,13 @@
 /*
     gates_expander_demo.ino
     Demo: read DI0/DI1 on CH422G expander via HAL wrapper and print timestamps.
-    Assumes hal::expander_wait_ready() will become true once panel HAL attached expander.
+    Assumes expander_wait_ready() will become true once panel HAL attached expander.
     Uses single-port reads (via expander_digitalRead) and a short debounce.
     Default settings target low-latency optical gates when using the expander only.
+    
+    NOTE: This example uses relative paths (../) to access the project headers.
+    It should be placed in the examples/gates_expander_demo/ directory of the
+    Chronos-esp project to resolve the includes correctly.
 */
 
 #include <Arduino.h>
@@ -25,7 +29,7 @@ void setup() {
         Serial.println("[gates_expander_demo] Expander ready.");
     }
 #else
-    Serial.println("[gates_expander_demo] Note: hal::expander_wait_ready not available, proceeding.");
+    Serial.println("[gates_expander_demo] Note: expander_wait_ready not available, proceeding.");
 #endif
 
     // Configure EXIO pins as inputs
@@ -46,7 +50,8 @@ void loop() {
     bool ok0 = expander_digitalRead(EXIO_DI0, level0);
     bool ok1 = expander_digitalRead(EXIO_DI1, level1);
     int64_t t_after = esp_timer_get_time();
-    int64_t t_read = (t_before + t_after) / 2; // approximate read timestamp (microseconds)
+    // Approximate timestamp (midpoint). Note: I2C latencies may vary between reads.
+    int64_t t_read = (t_before + t_after) / 2;
 
     if (!ok0 || !ok1) {
         Serial.println("[gates_expander_demo] Expander read failed (is HAL attached?).");
