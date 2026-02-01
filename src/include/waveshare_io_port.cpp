@@ -103,8 +103,14 @@ void waveshare_io_test() {
   
   // Configure DO0 and DO1 as outputs for visual feedback
   Serial.println("Configuring DO0 and DO1 as outputs for visual feedback...");
-  hal::expander_pinMode(DO0, true);  // true = output
-  hal::expander_pinMode(DO1, true);
+  if (!hal::expander_pinMode(DO0, true)) {  // true = output
+    Serial.println("ERROR: Failed to configure DO0 as output!");
+    return;
+  }
+  if (!hal::expander_pinMode(DO1, true)) {
+    Serial.println("ERROR: Failed to configure DO1 as output!");
+    return;
+  }
   
   // Initialize outputs to LOW
   hal::expander_digitalWrite(DO0, false);
@@ -144,8 +150,10 @@ void waveshare_io_test() {
         hal::expander_digitalWrite(DO1, true);  // Turn on DO1
       }
     } else {
-      // Read error - print debug message
+      // Read error - print debug message with troubleshooting hints
       Serial.println("Warning: Failed to read gate states from CH422G");
+      Serial.println("  Possible causes: I2C communication failure, wiring issues,");
+      Serial.println("  or expander not responding. Check connections and power.");
     }
     
     delay(50);  // Debounce delay

@@ -6,8 +6,8 @@
 // ──────────────────────────────────────────────────────────────────────────────
 // The CH422G I/O expander provides digital I/O pins labeled EXIO0..EXIO7.
 // From the Waveshare schematic:
-//   - EXIO0 → DI0 (digital input 0)
-//   - EXIO5 → DI1 (digital input 5)
+//   - EXIO0 → DI0 (digital input index 0, physically EXIO0)
+//   - EXIO5 → DI1 (digital input index 1, physically EXIO5)
 // ──────────────────────────────────────────────────────────────────────────────
 
 // Digital input pin indices on the CH422G expander
@@ -29,7 +29,8 @@
 #define LCD_BL  2  // LCD backlight pinout
 #define LCD_RST 3  // LCD reset pin
 #define SD_CS   4  // SD card select pin
-#define USB_SEL 5  // USB select pin (note: conflicts with DI1, verify use case)
+// Note: USB_SEL was previously pin 5, but EXIO5 is now dedicated to Gate B (DI1).
+// If USB selection is needed, use a different EXIO pin or verify priority.
 
 // Test function for validating gate inputs
 void waveshare_io_test();
