@@ -93,14 +93,18 @@ void waveshare_io_test() {
       events |= 0x01;
       Serial.println("[EXIO Test] Gate A pressed!");
       // Toggle DO0 as visual feedback
-      esp_io_expander_set_level(expander, DO0_mask, 1);
+      uint32_t current_do0 = 0;
+      esp_io_expander_get_level(expander, DO0_mask, &current_do0);
+      esp_io_expander_set_level(expander, DO0_mask, (current_do0 & DO0_mask) ? 0 : 1);
     }
     
     if (gate_b_pressed && !(events & 0x02)) {
       events |= 0x02;
       Serial.println("[EXIO Test] Gate B pressed!");
       // Toggle DO1 as visual feedback
-      esp_io_expander_set_level(expander, DO1_mask, 1);
+      uint32_t current_do1 = 0;
+      esp_io_expander_get_level(expander, DO1_mask, &current_do1);
+      esp_io_expander_set_level(expander, DO1_mask, (current_do1 & DO1_mask) ? 0 : 1);
     }
     
     delay(50); // Debounce delay
