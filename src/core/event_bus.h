@@ -11,12 +11,17 @@
  */
 
 enum EventType : uint8_t {
-  EVT_SELECT_FALL,
-  EVT_DOWN_FALL,
-  EVT_DOWN_LONG,
+  EVT_GATE_B_FALL,      // Gate B button falling edge (formerly EVT_SELECT_FALL)
+  EVT_GATE_A_FALL,      // Gate A button falling edge (formerly EVT_DOWN_FALL)
+  EVT_GATE_A_LONG,      // Gate A button long press (formerly EVT_DOWN_LONG)
   EVT_BOTH_LONG,
   EVT_BOTH_RELEASED,
-  EVT_WS_SNAPSHOT_TICK
+  EVT_WS_SNAPSHOT_TICK,
+  
+  // Backward compatibility aliases (DEPRECATED - will be removed in future release)
+  EVT_SELECT_FALL = EVT_GATE_B_FALL,
+  EVT_DOWN_FALL   = EVT_GATE_A_FALL,
+  EVT_DOWN_LONG   = EVT_GATE_A_LONG
 };
 
 struct Event {

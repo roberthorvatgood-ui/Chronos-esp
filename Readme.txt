@@ -37,6 +37,66 @@ Configuration & runtime
 - Wi‑Fi: connect via the GUI or to the AP to access the web export portal.
 - Exports: CSV files are saved under `/exp/YYYY-MM-DD/`. The web UI can zip a day's files and allow downloads and deletes.
 - RTC: PCF85063A hooks are provided; ensure RTC wiring (SDA=8, SCL=9 in the codebase) if used.
+- Gate Inputs: See "Wiring Gate Input Buttons" section below for EXIO0/EXIO5 pushbutton setup.
+
+Wiring Gate Input Buttons (GATE A and GATE B)
+----------------------------------------------
+The firmware uses two gate input buttons for triggering timing measurements:
+- GATE A (formerly DOWN): Connected to EXIO0
+- GATE B (formerly SELECT): Connected to EXIO5
+
+Hardware setup:
+1. Locate the EXIO header on your Waveshare ESP32-S3-Touch-LCD-5 board
+   Typical layout: [EXIO0] [EXIO1] [EXIO2] ... [EXIO5] ... [GND] [3V3]
+
+2. Connect pushbuttons (normally-open/NO type):
+   - Gate A: One terminal to EXIO0, other terminal to GND
+   - Gate B: One terminal to EXIO5, other terminal to GND
+
+3. Important notes:
+   - Use normally-open (NO) pushbuttons
+   - DO NOT connect 5V to buttons - only use GND
+   - Internal pull-up resistors are enabled in firmware
+   - No external pull-up resistors required
+   - Verify GND pin location on your board's EXIO header
+
+ASCII wiring diagram:
+                                EXIO Header
+    ┌────────────────────────────────────────────────────────┐
+    │ EXIO0  EXIO1  EXIO2  EXIO3  EXIO4  EXIO5  ...  GND  3V3│
+    └──┬───────────────────────────────────────┬──────┬──────┘
+       │                                       │      │
+       │ Gate A Button (NO)                    │      │
+       └──[  ]──────────────────────────────────┘      │
+          (press to close)                             │
+                                                        │
+       Gate B Button (NO)                              │
+       ┌──[  ]──────────────────────────────────────────┘
+       │  (press to close)
+       │
+    EXIO5
+
+GPIO Pin Mapping:
+The actual GPIO numbers for EXIO0 and EXIO5 depend on the board design.
+Current placeholder values in src/core/config.h:
+  - BUTTON_GATE_A (EXIO0): GPIO 15 (verify with Waveshare schematic!)
+  - BUTTON_GATE_B (EXIO5): GPIO 16 (verify with Waveshare schematic!)
+
+TO SET CORRECT GPIO NUMBERS:
+1. Download the Waveshare ESP32-S3-Touch-LCD-5 schematic from:
+   https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-5
+2. Locate EXIO0 and EXIO5 labels in the schematic
+3. Note the GPIO numbers they connect to (e.g., "EXIO0 -> GPIO_XX")
+4. Update the values in src/core/config.h:
+   #define BUTTON_GATE_A XX  // Update XX with actual GPIO for EXIO0
+   #define BUTTON_GATE_B YY  // Update YY with actual GPIO for EXIO5
+
+Example code:
+See examples/gate_input_example.ino for a complete demonstration of:
+- Using attachInterrupt for gate inputs
+- Microsecond timestamp capture with micros()
+- Software debounce implementation
+- IRAM_ATTR for ESP32 ISR compatibility
 
 Developer notes
 - Core modules:

@@ -6,41 +6,41 @@
 #include "../core/config.h"       // sibling
 
 
-static unsigned long downPressStartMs = 0;
+static unsigned long gateAPressStartMs = 0;  // Gate A press tracking (formerly downPressStartMs)
 static unsigned long bothPressStartMs = 0;
 static bool bothHeld = false;
 
 void input_init() {
-  pinMode(BUTTON_SELECT, INPUT_PULLUP);
-  pinMode(BUTTON_DOWN,   INPUT_PULLUP);
+  pinMode(BUTTON_GATE_B, INPUT_PULLUP);  // Gate B on EXIO5
+  pinMode(BUTTON_GATE_A, INPUT_PULLUP);  // Gate A on EXIO0
 }
 
-void input_read(Buttons &btns, int &currentSelect, int &currentDown){
-  currentSelect = digitalRead(BUTTON_SELECT);
-  currentDown   = digitalRead(BUTTON_DOWN);
+void input_read(Buttons &btns, int &currentGateB, int &currentGateA){
+  currentGateB = digitalRead(BUTTON_GATE_B);
+  currentGateA = digitalRead(BUTTON_GATE_A);
 }
 bool input_edge_falling(int prev, int curr){ return prev == HIGH && curr == LOW; }
 
 // Publish events (works with real buttons later)
 void input_poll_and_publish(Buttons &btns) {
-  const int sel = digitalRead(BUTTON_SELECT);
-  const int dwn = digitalRead(BUTTON_DOWN);
+  const int gateB = digitalRead(BUTTON_GATE_B);
+  const int gateA = digitalRead(BUTTON_GATE_A);
   const unsigned long now = millis();
 
-  if (btns.prevSelect == HIGH && sel == LOW) gBus.publish(EVT_SELECT_FALL, now);
-  if (btns.prevDown   == HIGH && dwn == LOW) gBus.publish(EVT_DOWN_FALL,   now);
+  if (btns.prevGateB == HIGH && gateB == LOW) gBus.publish(EVT_GATE_B_FALL, now);
+  if (btns.prevGateA == HIGH && gateA == LOW) gBus.publish(EVT_GATE_A_FALL, now);
 
-  if (dwn == LOW) {
-    if (downPressStartMs == 0) downPressStartMs = now;
-    if ((now - downPressStartMs) >= LONG_PRESS_MS) {
-      gBus.publish(EVT_DOWN_LONG, now);
-      downPressStartMs = 0;
+  if (gateA == LOW) {
+    if (gateAPressStartMs == 0) gateAPressStartMs = now;
+    if ((now - gateAPressStartMs) >= LONG_PRESS_MS) {
+      gBus.publish(EVT_GATE_A_LONG, now);
+      gateAPressStartMs = 0;
     }
   } else {
-    downPressStartMs = 0;
+    gateAPressStartMs = 0;
   }
 
-  const bool bothPressed = (sel == LOW) && (dwn == LOW);
+  const bool bothPressed = (gateB == LOW) && (gateA == LOW);
   if (bothPressed) {
     bothHeld = true;
     if (bothPressStartMs == 0) bothPressStartMs = now;
@@ -50,12 +50,12 @@ void input_poll_and_publish(Buttons &btns) {
     }
   } else {
     bothPressStartMs = 0;
-    if (bothHeld && sel == HIGH && dwn == HIGH) {
+    if (bothHeld && gateB == HIGH && gateA == HIGH) {
       gBus.publish(EVT_BOTH_RELEASED, now);
       bothHeld = false;
     }
   }
 
-  btns.prevSelect = sel;
-  btns.prevDown   = dwn;
+  btns.prevGateB = gateB;
+  btns.prevGateA = gateA;
 }
