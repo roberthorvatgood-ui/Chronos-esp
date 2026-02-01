@@ -35,7 +35,7 @@
 #include "../drivers/hal_panel.h"
 #include <Arduino.h>
 
-// Include IO expander C API
+// Include IO expander C API for low-level access
 #if defined(__has_include)
   #if __has_include(<port/esp_io_expander.h>)
     #include <port/esp_io_expander.h>
@@ -43,6 +43,19 @@
     #include <esp_io_expander.h>
   #endif
 #endif
+
+// Declare the get_level function if not already available
+extern "C" {
+  #ifndef ESP_OK
+    #define ESP_OK 0
+  #endif
+  
+  // Standard ESP IO Expander C API function for reading pin levels
+  // This function is typically provided by the esp_io_expander library
+  esp_err_t esp_io_expander_get_level(esp_io_expander_handle_t handle, 
+                                      uint32_t pin_mask, 
+                                      uint32_t *level);
+}
 
 // Output pins for visual feedback (DO0 and DO1)
 #define DO0 6
@@ -108,19 +121,10 @@ void waveshare_io_test() {
   // Main test loop
   while ((events & EVENT_BOTH) != EVENT_BOTH) {
     // Read both gate inputs using the C API
-    // The esp_io_expander API typically provides a function like:
-    // esp_err_t esp_io_expander_get_level(handle, pin_mask, uint32_t *level);
-    
     uint32_t gate_states = 0;
-    
-    // Read the state of both pins
-    // Note: We need to read each pin individually since the C API might not support
-    // multi-pin reads. The HAL doesn't expose a digitalRead function yet.
-    // For now, we'll use the set/get level pattern common in ESP IO expander APIs.
-    
-    #ifdef esp_io_expander_get_level
-    // If the API is available, read both pins
     uint32_t pin_mask = PIN_GATE_A_mask | PIN_GATE_B_mask;
+    
+    // Read the state of both pins using esp_io_expander_get_level
     if (esp_io_expander_get_level(expander, pin_mask, &gate_states) == ESP_OK) {
       // Active-low detection: button pressed when bit is 0
       bool gate_a_pressed = !(gate_states & PIN_GATE_A_mask);
@@ -139,28 +143,10 @@ void waveshare_io_test() {
         Serial.println("✓ Gate B pressed (EXIO5)");
         hal::expander_digitalWrite(DO1, true);  // Turn on DO1
       }
+    } else {
+      // Read error - print debug message
+      Serial.println("Warning: Failed to read gate states from CH422G");
     }
-    #else
-    // Fallback: Use a simulated read or skip test
-    Serial.println("WARNING: esp_io_expander_get_level not available.");
-    Serial.println("This is a compile-time test. Actual hardware testing requires");
-    Serial.println("the full ESP IO Expander library with read support.");
-    Serial.println("Simulating button press events for compilation...");
-    
-    // Simulate events to allow code to compile and exit gracefully
-    delay(500);
-    if (!(events & EVENT_GATE_A)) {
-      events |= EVENT_GATE_A;
-      Serial.println("✓ Gate A simulated (EXIO0)");
-      hal::expander_digitalWrite(DO0, true);
-    }
-    delay(500);
-    if (!(events & EVENT_GATE_B)) {
-      events |= EVENT_GATE_B;
-      Serial.println("✓ Gate B simulated (EXIO5)");
-      hal::expander_digitalWrite(DO1, true);
-    }
-    #endif
     
     delay(50);  // Debounce delay
   }
