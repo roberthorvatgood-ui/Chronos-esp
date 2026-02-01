@@ -27,7 +27,7 @@
 #define PIN_GATE_B 16  // EXIO5 - verify this GPIO number!
 
 // Debounce settings
-#define DEBOUNCE_MICROS 50000  // 50ms debounce time
+#define DEBOUNCE_MICROS 50000  // 50000us (50ms) debounce time
 
 // Volatile variables for ISR (Interrupt Service Routine)
 volatile uint64_t lastGateA_us = 0;

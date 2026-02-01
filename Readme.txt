@@ -66,15 +66,17 @@ ASCII wiring diagram:
     │ EXIO0  EXIO1  EXIO2  EXIO3  EXIO4  EXIO5  ...  GND  3V3│
     └──┬───────────────────────────────────────┬──────┬──────┘
        │                                       │      │
-       │ Gate A Button (NO)                    │      │
-       └──[  ]──────────────────────────────────┘      │
-          (press to close)                             │
-                                                        │
-       Gate B Button (NO)                              │
-       ┌──[  ]──────────────────────────────────────────┘
-       │  (press to close)
-       │
-    EXIO5
+       │    ┌─────────┐   Gate A Button        │      │
+       └────┤ NO SW   ├───────────────────────────────┘
+            └─────────┘   (normally-open)
+       
+       ┌─────────┐   Gate B Button
+       │ NO SW   │   (normally-open)
+       └────┬────┘
+            │
+       ┌────┴─────────────────────────────────────────┐
+       │                                               │
+    EXIO5                                            GND
 
 GPIO Pin Mapping:
 The actual GPIO numbers for EXIO0 and EXIO5 depend on the board design.
