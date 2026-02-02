@@ -1,0 +1,67 @@
+
+
+
+& "$env:APPDATA\npm\lv_font_conv.cmd" `
+  --font C:\Users\robert.horvat\Documents\fonts\NotoSans\static\NotoSans-Regular.ttf `
+  --size 28 --bpp 4 --format lvgl --no-kerning --no-compress `
+  --lv-font-name ui_font_28 `
+  -o "C:\Users\robert.horvat\Arduino IDE Sketches\Waveshare ESP32-S3-Touch-LCD-5\Stopwatch_Waveshare_LCD5\src\assets\fonts\ui_font_28.c" `
+  -r 0x20-0x7E,0x00A0-0x00FF,0x0100-0x017F,0x0180-0x024F,0x0300-0x036F,0x2000-0x206F,0x0370-0x03FF,0x1F00-0x1FFF,0x2200-0x22FF,0x00B7,0x00B0,0x00B2,0x03B8 `
+  --symbols °τΔ×≈≃≅
+
+
+& "$env:APPDATA\npm\lv_font_conv.cmd" `
+  --font C:\Users\robert.horvat\Documents\fonts\NotoSans\static\NotoSans-Regular.ttf `
+  --size 16 --bpp 4 --format lvgl --no-kerning `
+  --lv-font-name ui_font_16 `
+  -o "C:\Users\robert.horvat\Arduino IDE Sketches\Waveshare ESP32-S3-Touch-LCD-5\Stopwatch_Waveshare_LCD5\src\assets\fonts\ui_font_16.c" `
+  -r 0x20-0x7E,0x00A0-0x00FF,0x0100-0x017F,0x0180-0x024F,0x0300-0x036F,0x2000-0x206F,0x0370-0x03FF,0x1F00-0x1FFF,0x2200-0x22FF,0x00B7,0x00B0,0x00B2,0x03B8 `
+  --symbols °τΔ×≈≃≅ 
+
+
+
+
+& "$env:APPDATA\npm\lv_font_conv.cmd" `
+  --font C:\Users\robert.horvat\Documents\fonts\NotoSans\static\NotoSans-Regular.ttf `
+  --size 32 --bpp 4 --format lvgl --no-kerning `
+  --lv-font-name ui_font_32 `
+  -o "C:\Users\robert.horvat\Arduino IDE Sketches\Waveshare ESP32-S3-Touch-LCD-5\Stopwatch_Waveshare_LCD5\src\assets\fonts\ui_font_32.c" `
+  -r 0x20-0x7E,0x00A0-0x00FF,0x0100-0x017F,0x0180-0x024F,0x0300-0x036F,0x2000-0x206F,0x0370-0x03FF,0x1F00-0x1FFF,0x2200-0x22FF,0x00B7,0x00B0,0x00B2,0x03B8 `
+  --symbols °τΔ×≈≃≅
+
+& "$env:APPDATA\npm\lv_font_conv.cmd" `
+  --font C:\Users\robert.horvat\Documents\fonts\NotoSans\static\NotoSans-Regular.ttf `
+  --size 48 --bpp 4 --format lvgl --no-kerning `
+  --lv-font-name ui_font_48 `
+  -o "C:\Users\robert.horvat\Arduino IDE Sketches\Waveshare ESP32-S3-Touch-LCD-5\Stopwatch_Waveshare_LCD5\src\assets\fonts\ui_font_48.c" `
+   -r 0x20-0x7E,0x00A0-0x00FF `
+   --symbols ²
+
+
+& "$env:APPDATA\npm\lv_font_conv.cmd" `
+  --font C:\Users\robert.horvat\Documents\fonts\NotoSans\static\NotoSans-Regular.ttf `
+  --size 84 --bpp 4 --format lvgl --no-kerning `
+  --lv-font-name ui_font_84 `
+  -o "C:\Users\robert.horvat\Arduino IDE Sketches\Waveshare ESP32-S3-Touch-LCD-5\Stopwatch_Waveshare_LCD5\src\assets\fonts\ui_font_84.c" `
+  --symbols 0123456789:.
+
+
+Symbols:
+č Č ć Ć đ Đ š Š ž Ž ä Ä ö Ö ü Ü ß á Á é É í Í ó Ó ú Ú ñ Ñ ¡ ¿ à À â Â é É è È ê Ê ë Ë î Î ï Ï ô Ô ù Ù û Û ü Ü ç Ç Δ τ ² °τΔ×≈≃≅
+
+Range:
+0x20-0x7E,0xA0-0xFF,0x100-0x17F,0x1E00-0x1EFF,0x370-0x3FF,0x2070-0x209F,0x2200-0x22FF,0x00B0
+
+
+
+------------------------------------------------------------------------------------------------------------
+FONTS USED:
+
+1) ui_font_84 — Stopwatch counter (large digits)
+2) ui_font_48 — Main numeric readouts on experiment screens
+3) ui_font_32 — Screen titles (header center)
+4) ui_font_28 — Buttons, captions, and most medium UI text
+5) ui_font_16 — Small text: formulas, history, footers
+6) lv_font_montserrat_28 — Header icons and clock
+
+  
