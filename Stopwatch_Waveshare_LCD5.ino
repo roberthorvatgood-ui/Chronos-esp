@@ -1,7 +1,8 @@
+
 /*****
  * Chronos – Main Application (.ino)
  * Integrated SD Export + Web UI
- * [Updated: 2026-02-01] — added waveshare IO test header include
+ * [Updated: 2026-01-25 13:30 CET]
  *****/
 
 #include <Arduino.h>
@@ -22,11 +23,6 @@
 #include "src/gui/screensaver.h"
 #include "src/core/rtc_manager.h"
 #include "src/core/pcf85063a_hooks.h"
-#include "src/drivers/expander_output_blink.h"
-
-// Add the waveshare IO test header so waveshare_io_test() and waveshare_io_test_debug()
-// are visible to this translation unit.
-#include "src/include/waveshare_io_port.h"
 
 // ── Export system (SD + Web UI) ────────────────────────────────────────────────
 #include "src/export/export_fs.h"
@@ -98,11 +94,8 @@ void setup() {
   load_screensaver_timeout();
 
   if (!hal::init())  Serial.println("[HAL] init() failed");
-  // Explicitly pass the initial backlight state (no default in header)
-  if (!hal::begin(false)) Serial.println("[HAL] begin() failed");
+  if (!hal::begin()) Serial.println("[HAL] begin() failed");
   if (!hal::lvgl_init()) Serial.println("[HAL] lvgl_init() failed");
-
-
 
   // --- Network bring-up honoring saved General Settings (apply first) ---
   const bool wifi_on = load_wifi_pref_on();
@@ -126,8 +119,6 @@ void setup() {
   }
   // Start AP + Web UI (AP+STA).
   chronos::apweb_begin("Chronos-AP", "chronos123");
-
-
 
   // ---- Splash (optional) ------------------------------------------------
 #if SHOW_SPLASH
@@ -161,77 +152,12 @@ void setup() {
   experiments_init();
 
   gLastUserActivityMs = millis();
-/*
-    // --- Quick SW test: drive DO0/DO1 HIGH (temporary) ---
-  {
-  // Update these if your DO pins map to different EXIO indices
-  const uint8_t DO0_EXIO = 0;
-  const uint8_t DO1_EXIO = 1;
-
-  Serial.println("[TEST] Attempting to drive DO0/DO1 HIGH (software test)");
-  if (!hal::expander_wait_ready(2000)) {
-    Serial.println("[TEST] Expander not ready; aborting DO set");
-  } else {
-    // Configure as outputs and drive HIGH
-    hal::expander_pinMode(DO0_EXIO, true);
-    hal::expander_pinMode(DO1_EXIO, true);
-    hal::expander_digitalWrite(DO0_EXIO, true);
-    hal::expander_digitalWrite(DO1_EXIO, true);
-    Serial.println("[TEST] DO0/DO1 set HIGH. Measure terminal voltage now.");
-  }
-  } */
 }
 
 // [2026-01-25 13:30 CET] UPDATED (Robert + Copilot):
 // - AP web now holds the screensaver via screensaver_set_apweb_hold().
 // - We no longer force-hide saver from apweb_fs_busy() here to avoid CH422G races.
 void loop() {
-  // Check Serial for an interactive command to run the waveshare IO test.
-  // Open Serial Monitor (115200) and send the line: io_test
-  if (Serial.available()) {
-  String cmd = Serial.readStringUntil('\n');
-  cmd.trim();
-
-  if (cmd.equalsIgnoreCase("io_test")) {
-    Serial.println("Starting waveshare_io_test() — press Gate A (EXIO0) and Gate B (EXIO5) now");
-    waveshare_io_test(); // blocking; returns when test completes
-    Serial.println("waveshare_io_test() finished — resuming normal operation");
-  } else if (cmd.equalsIgnoreCase("io_debug")) {
-    Serial.println("Starting waveshare_io_test_debug() for 60s");
-    waveshare_io_test_debug();
-    Serial.println("waveshare_io_test_debug() finished");
-  } else if (cmd.startsWith("toggle_do")) {
-    // Format: "toggle_do [period_ms] [cycles]"
-    // Example: "toggle_do 3000 10" or "toggle_do 3000 0" (0 = run forever in task)
-    // Or use "toggle_do_forever 3000"
-    uint32_t period = 3000;
-    uint32_t cycles = 10;
-    // split args
-    int firstSpace = cmd.indexOf(' ');
-    if (firstSpace >= 0) {
-      String rest = cmd.substring(firstSpace + 1);
-      rest.trim();
-      // try parse up to two numbers
-      int sp = rest.indexOf(' ');
-      if (sp >= 0) {
-        period = (uint32_t)rest.substring(0, sp).toInt();
-        cycles = (uint32_t)rest.substring(sp + 1).toInt();
-      } else {
-        period = (uint32_t)rest.toInt();
-      }
-    }
-    // If user asked "toggle_do_forever ..." treat cycles=0
-    if (cmd.startsWith("toggle_do_forever")) cycles = 0;
-
-    Serial.printf("Starting toggle_do: period=%u ms cycles=%u (non-blocking task)\n", (unsigned)period, (unsigned)cycles);
-    if (!expander_toggle_terminal_do01_start(period, cycles, /*exio_do0*/0, /*exio_do1*/1)) {
-      Serial.println("[ERROR] Failed to start expander toggle task");
-    }
-  } else {
-    // handle other commands as before...
-  }
-}
-
   // Keep the web server responsive first; AP web also drives the saver hold gate.
   chronos::apweb_loop();
 
