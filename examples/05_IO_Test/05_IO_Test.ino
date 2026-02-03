@@ -1,5 +1,9 @@
 #include "../../src/drivers/waveshare_io_port.h"
 
+// Track previous states to detect changes
+static bool prevGateA = false;
+static bool prevGateB = false;
+
 void setup()
 {
     Serial.begin(115200); // Initialize serial communication
@@ -19,17 +23,21 @@ void loop()
 
     // Query the debounced state of the gates.
     // waveshare_gate*_closed() returns true when the gate is CLOSED (active-LOW).
-    if (waveshare_gateA_closed()) {
-      Serial.println("GATE A: CLOSED");
-    } else {
-      Serial.println("GATE A: OPEN");
+    bool gateA = waveshare_gateA_closed();
+    bool gateB = waveshare_gateB_closed();
+
+    // Only print when state changes
+    if (gateA != prevGateA) {
+      Serial.print("GATE A: ");
+      Serial.println(gateA ? "CLOSED" : "OPEN");
+      prevGateA = gateA;
     }
 
-    if (waveshare_gateB_closed()) {
-      Serial.println("GATE B: CLOSED");
-    } else {
-      Serial.println("GATE B: OPEN");
+    if (gateB != prevGateB) {
+      Serial.print("GATE B: ");
+      Serial.println(gateB ? "CLOSED" : "OPEN");
+      prevGateB = gateB;
     }
 
-    delay(1000); // keep serial output readable
+    delay(10); // Short delay to keep CPU usage reasonable
 }

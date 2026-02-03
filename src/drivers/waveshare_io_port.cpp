@@ -116,9 +116,9 @@ void waveshare_io_test() {
   for (;;) {
     waveshare_io_sample();
     Serial.print(F("GATE A: "));
-    Serial.print(gateA_debounced ? F("OPEN") : F("CLOSED"));
+    Serial.print(waveshare_gateA_closed() ? F("CLOSED") : F("OPEN"));
     Serial.print(F("    |    GATE B: "));
-    Serial.println(gateB_debounced ? F("OPEN") : F("CLOSED"));
+    Serial.println(waveshare_gateB_closed() ? F("CLOSED") : F("OPEN"));
     delay(SAMPLE_PERIOD_MS);
   }
 }

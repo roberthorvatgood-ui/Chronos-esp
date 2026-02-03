@@ -1,6 +1,3 @@
-#ifndef __IO_PORT_H
-#define __IO_PORT_H
-
 #pragma once
 
 #include <Arduino.h>
@@ -130,4 +127,3 @@ bool waveshare_gateB_closed();
 void waveshare_io_test(); // Legacy blocking test (kept for compatibility)
 void waveshare_lcd_init(); // Function to initialize LCD
 
-#endif // End of IO_PORT_H
