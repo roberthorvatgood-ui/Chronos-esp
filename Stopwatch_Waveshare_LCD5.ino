@@ -29,6 +29,8 @@
 #include "src/export/chronos_sd.h"
 #include "src/export/web_export.h"
 
+static unsigned long gLastExpanderDebugMs = 0;
+
 // [2026-01-24 22:58 CET] ADD (Copilot): query if AP web is in FS critical section
 namespace chronos { bool apweb_fs_busy(); }
 
@@ -114,6 +116,22 @@ void setup() {
 
   // ---- Export system: mount SD & start Web UI (AP mode) -----------------
   hal::expander_wait_ready(800);
+
+    // DEBUG: one-time CH422G read
+  {
+      esp_io_expander_handle_t h = hal::expander_get_handle();
+      if (h) {
+          uint32_t val = 0;
+          if (esp_io_expander_get_level(h, 0xFF, &val) == ESP_OK) {
+              Serial.printf("[DEBUG] CH422G initial IN=0x%02X\n", (unsigned)(val & 0xFF));
+          } else {
+              Serial.println("[DEBUG] CH422G read failed");
+          }
+      } else {
+          Serial.println("[DEBUG] CH422G handle not ready");
+      }
+  }
+
   if (!chronos_sd_begin()) {
     Serial.println("[Export] SD init failed — export UI will still start, but listing will be empty.");
   }
