@@ -3,6 +3,7 @@
  * Chronos – SD card bring-up (SPI) using HAL expander
  * [Updated: 2026-01-19 22:55 CET]
  * [Updated: 2026-01-24 17:05 CET] CLEAN: fix missing statics + ref-counted CS guard
+ * [Updated: 2026-02-04] Add HAL I2C mutex protection for expander access
  *****/
 #include <Arduino.h>
 #include <SPI.h>
@@ -10,6 +11,7 @@
 #include "waveshare_sd_card.h"   // pins + EXIO masks (SDA=8, SCL=9, SD_CS mask)
 #include "export_fs.h"           // chronos::exportfs_set_fs(&SD)
 #include "src/drivers/hal_panel.h"
+#include "src/drivers/hal_i2c_manager.h"
 #include "chronos_sd.h"
 
 static bool s_sd_ready = false;
@@ -30,6 +32,12 @@ bool chronos_sd_is_ready() {
 static inline void cs_drive(bool low) {
   if (!hal::expander_wait_ready(800)) return;
 
+  // Lock I2C bus for expander access
+  if (!hal::i2c_lock(80)) {
+    Serial.println("[Chronos][SD] I2C lock timeout in cs_drive");
+    return;
+  }
+
   // Configure SD_CS direction once (reduces I2C traffic and failure rate)
   if (!s_cs_dir_set) {
     for (int i = 0; i < 3; ++i) {
@@ -44,6 +52,8 @@ static inline void cs_drive(bool low) {
     if (hal::expander_digitalWrite(SD_CS, level_high)) break;
     delay(2);
   }
+
+  hal::i2c_unlock();
 
   delayMicroseconds(2);
 }

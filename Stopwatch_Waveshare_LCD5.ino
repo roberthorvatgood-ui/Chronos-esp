@@ -3,6 +3,13 @@
  * Chronos – Main Application (.ino)
  * Integrated SD Export + Web UI
  * [Updated: 2026-01-25 13:30 CET]
+ * [Updated: 2026-02-04] Added HAL I2C mutex for safe concurrent access
+ * 
+ * IMPORTANT: When creating LVGL callbacks (button handlers, etc.):
+ * - Do NOT perform blocking I2C operations directly in LVGL callbacks
+ * - Move any I2C-dependent logic (expander reads, RTC updates, SD access)
+ *   to background tasks and use task notifications or event flags
+ * - This prevents CPU1 watchdog timeouts when LVGL runs on CPU1
  *****/
 
 #include <Arduino.h>
@@ -12,6 +19,7 @@
 #endif
 
 #include "src/drivers/hal_panel.h"
+#include "src/drivers/hal_i2c_manager.h"
 #include "src/gui/gui.h"
 #include "src/net/app_network.h"
 #include "src/core/event_bus.h"
@@ -89,6 +97,9 @@ void setup() {
   delay(1000);
 
   Serial.println("SETUP START");
+
+  // Initialize I2C mutex before any I2C operations
+  hal::i2c_init();
 
   i18n_init();
   i18n_load_saved();

@@ -4,6 +4,7 @@
 #include "../core/config.h"
 #include "../core/gate_engine.h"
 #include "../drivers/hal_panel.h"   // hal::expander_get_handle(), esp_io_expander_get_level
+#include "../drivers/hal_i2c_manager.h"
 
 // Debounced logical levels: true = HIGH (beam OPEN), false = LOW (beam BLOCKED)
 static bool gGateALevel = true;
@@ -46,9 +47,19 @@ static uint8_t read_inputs_raw()
         return 0xFF;
     }
 
+    // Lock I2C bus with timeout
+    if (!hal::i2c_lock(100)) {
+        // Timeout: return safe default (all HIGH) to avoid spurious triggers
+        return 0xFF;
+    }
+
     uint32_t val = 0;
     const uint32_t mask = 0xFF;
-    if (esp_io_expander_get_level(h, mask, &val) != ESP_OK) {
+    esp_err_t err = esp_io_expander_get_level(h, mask, &val);
+    
+    hal::i2c_unlock();
+
+    if (err != ESP_OK) {
         // On error, keep previous state; return all HIGH so we don't spurious-trigger
         return 0xFF;
     }

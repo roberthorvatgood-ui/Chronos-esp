@@ -5,6 +5,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <string.h>
+#include "../drivers/hal_i2c_manager.h"
 
 /* ========= Local settings/state ========= */
 
@@ -90,7 +91,15 @@ static void rtc_worker_task(void*) {
     // Hardware writer (PCF85063) is called in safe context
     if (s_hw_writer) {
       struct tm loc{}; localtime_r(&now, &loc);
+      
+      if (!hal::i2c_lock(100)) {
+        Serial.println("[RTC] HW writer skipped: I2C lock timeout");
+        continue;
+      }
+      
       bool ok = s_hw_writer(loc);
+      hal::i2c_unlock();
+      
       Serial.printf("[RTC] HW writer called -> %s\n", ok ? "OK" : "fail");
     }
   }
@@ -141,8 +150,13 @@ void rtc_set_manual(const struct tm& t) {
   nvs_save_all();
 
   if (s_hw_writer) {
-    bool ok = s_hw_writer(t);
-    Serial.printf("[RTC] Manual time -> HW RTC: %s\n", ok ? "OK" : "FAIL");
+    if (!hal::i2c_lock(100)) {
+      Serial.println("[RTC] Manual time -> HW RTC: SKIPPED (I2C lock timeout)");
+    } else {
+      bool ok = s_hw_writer(t);
+      hal::i2c_unlock();
+      Serial.printf("[RTC] Manual time -> HW RTC: %s\n", ok ? "OK" : "FAIL");
+    }
   }
 }
 
@@ -205,7 +219,16 @@ void rtc_init(void) {
   // 1) Try hardware RTC first
   if (s_hw_reader) {
     struct tm hw{};
-    if (s_hw_reader(hw) && (hw.tm_year + 1900) >= 2020) {
+    bool hw_ok = false;
+    
+    if (!hal::i2c_lock(100)) {
+      Serial.println("[RTC] HW reader skipped: I2C lock timeout");
+    } else {
+      hw_ok = s_hw_reader(hw) && (hw.tm_year + 1900) >= 2020;
+      hal::i2c_unlock();
+    }
+    
+    if (hw_ok) {
 
       time_t sec = mktime(&hw);
       struct timeval tv = { .tv_sec = sec, .tv_usec = 0 };
