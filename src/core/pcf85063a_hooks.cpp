@@ -104,7 +104,7 @@ static bool hw_reader_hook(struct tm& out)
 {
     // Acquire I2C lock before RTC read
     if (!hal::i2c_lock(100)) {
-        Serial.println("[PCF] HW reader: Failed to acquire I2C lock");
+        Serial.println("[PCF] HW reader: Failed to acquire I2C lock (timeout: 100ms)");
         return false;
     }
     
@@ -146,7 +146,7 @@ static bool hw_writer_hook(const struct tm& in)
 {
     // Acquire I2C lock before RTC write
     if (!hal::i2c_lock(100)) {
-        Serial.println("[PCF] HW writer: Failed to acquire I2C lock");
+        Serial.println("[PCF] HW writer: Failed to acquire I2C lock (timeout: 100ms)");
         return false;
     }
     
@@ -176,7 +176,7 @@ bool init_pcf_hooks(void) {
 void test_pcf_battery(void) {
   // Acquire I2C lock for battery test
   if (!hal::i2c_lock(100)) {
-    Serial.println("[PCF] Battery test FAILED: cannot acquire I2C lock");
+    Serial.println("[PCF] Battery test FAILED: cannot acquire I2C lock (timeout: 100ms)");
     return;
   }
   

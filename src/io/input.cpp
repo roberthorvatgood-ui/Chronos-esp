@@ -44,7 +44,7 @@ static uint8_t read_inputs_raw()
     // Acquire I2C lock before reading expander
     if (!hal::i2c_lock(50)) {
         // On lock timeout, treat as all HIGH (open) to avoid spurious triggers
-        Serial.println("[Input] WARNING: Failed to acquire I2C lock for input read");
+        Serial.println("[Input] WARNING: Failed to acquire I2C lock for input read (timeout: 50ms)");
         return 0xFF;
     }
     

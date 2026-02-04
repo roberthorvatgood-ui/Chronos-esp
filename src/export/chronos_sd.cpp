@@ -31,7 +31,7 @@ bool chronos_sd_is_ready() {
 static inline void cs_drive(bool low) {
   // Acquire I2C lock before accessing expander
   if (!hal::i2c_lock(100)) {
-    Serial.println("[Chronos][SD] WARNING: Failed to acquire I2C lock for CS drive");
+    Serial.println("[Chronos][SD] WARNING: Failed to acquire I2C lock for CS drive (timeout: 100ms)");
     return;
   }
   
