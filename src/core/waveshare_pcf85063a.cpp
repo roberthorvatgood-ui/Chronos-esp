@@ -5,6 +5,7 @@
  ******************************************************************************/
 
 #include "waveshare_pcf85063a.h"
+#include "../drivers/hal_i2c_manager.h"
 #include <stdio.h>
 
 static inline uint8_t dec2bcd(uint8_t v){ return (uint8_t)(((v/10)<<4)|(v%10)); }
@@ -24,10 +25,22 @@ static inline esp_err_t i2c_rd_reg(uint8_t reg, uint8_t* data, size_t len, TickT
 
 /* ----- Public LL helpers ----- */
 bool PCF85063A_ReadRegs(uint8_t reg, uint8_t *data, size_t len) {
-  return i2c_rd_reg(reg, data, len) == ESP_OK;
+  if (!hal::i2c_lock(50)) {
+    printf("[PCF] ReadRegs: i2c_lock timeout\n");
+    return false;
+  }
+  bool ok = i2c_rd_reg(reg, data, len) == ESP_OK;
+  hal::i2c_unlock();
+  return ok;
 }
 bool PCF85063A_WriteRegs(uint8_t reg, const uint8_t *data, size_t len) {
-  return i2c_wr_reg(reg, data, len) == ESP_OK;
+  if (!hal::i2c_lock(50)) {
+    printf("[PCF] WriteRegs: i2c_lock timeout\n");
+    return false;
+  }
+  bool ok = i2c_wr_reg(reg, data, len) == ESP_OK;
+  hal::i2c_unlock();
+  return ok;
 }
 
 /* ----- Init / Reset (tolerant) ----- */

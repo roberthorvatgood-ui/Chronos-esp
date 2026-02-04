@@ -4,6 +4,7 @@
 #include "../core/config.h"
 #include "../core/gate_engine.h"
 #include "../drivers/hal_panel.h"   // hal::expander_get_handle(), esp_io_expander_get_level
+#include "../drivers/hal_i2c_manager.h"
 
 // Debounced logical levels: true = HIGH (beam OPEN), false = LOW (beam BLOCKED)
 static bool gGateALevel = true;
@@ -38,6 +39,7 @@ bool input_edge_rising (int prev, int curr) { return prev == LOW  && curr == HIG
 static inline int lvl_to_digital(bool v)    { return v ? HIGH : LOW; }
 
 // Read CH422G input bits via HAL's expander handle
+// Protected by I2C mutex to avoid contention with SD CS writes and RTC
 static uint8_t read_inputs_raw()
 {
     esp_io_expander_handle_t h = hal::expander_get_handle();
@@ -46,9 +48,21 @@ static uint8_t read_inputs_raw()
         return 0xFF;
     }
 
+    // Acquire I2C lock before reading expander
+    // NOTE: This is called from input_poll_and_publish (task context), NOT from ISR
+    if (!hal::i2c_lock(50)) {
+        // Timeout - skip this read cycle to avoid blocking the loop
+        // Serial.println("[Input] i2c_lock timeout, skipping read");
+        return 0xFF;  // Return all HIGH to avoid spurious triggers
+    }
+
     uint32_t val = 0;
     const uint32_t mask = 0xFF;
-    if (esp_io_expander_get_level(h, mask, &val) != ESP_OK) {
+    esp_err_t err = esp_io_expander_get_level(h, mask, &val);
+    
+    hal::i2c_unlock();
+
+    if (err != ESP_OK) {
         // On error, keep previous state; return all HIGH so we don't spurious-trigger
         return 0xFF;
     }

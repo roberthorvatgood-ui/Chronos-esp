@@ -10,6 +10,7 @@
 #include "waveshare_sd_card.h"   // pins + EXIO masks (SDA=8, SCL=9, SD_CS mask)
 #include "export_fs.h"           // chronos::exportfs_set_fs(&SD)
 #include "src/drivers/hal_panel.h"
+#include "src/drivers/hal_i2c_manager.h"
 #include "chronos_sd.h"
 
 static bool s_sd_ready = false;
@@ -30,6 +31,12 @@ bool chronos_sd_is_ready() {
 static inline void cs_drive(bool low) {
   if (!hal::expander_wait_ready(800)) return;
 
+  // Acquire I2C lock to serialize access with other I2C users
+  if (!hal::i2c_lock(50)) {
+    Serial.println("[SD] cs_drive: i2c_lock timeout, skipping CS operation");
+    return;
+  }
+
   // Configure SD_CS direction once (reduces I2C traffic and failure rate)
   if (!s_cs_dir_set) {
     for (int i = 0; i < 3; ++i) {
@@ -44,6 +51,8 @@ static inline void cs_drive(bool low) {
     if (hal::expander_digitalWrite(SD_CS, level_high)) break;
     delay(2);
   }
+
+  hal::i2c_unlock();
 
   delayMicroseconds(2);
 }

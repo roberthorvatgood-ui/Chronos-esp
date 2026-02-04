@@ -166,6 +166,10 @@ static void stop_drift_animations() {
 // ─────────────────────────────────────────────────────────────
 // Show the screensaver overlay
 // ─────────────────────────────────────────────────────────────
+// NOTE: This function performs backlight control which may interact with the
+// CH422G expander on I2C. When called from LVGL callbacks or screen transitions,
+// avoid holding hal::i2c_lock() for extended periods to prevent screen jumps
+// or delays when I2C is busy with SD/RTC operations.
 void screensaver_show(void)
 {
     // If AP web holds the saver, do absolutely nothing:
@@ -273,6 +277,10 @@ void screensaver_show(void)
 // ─────────────────────────────────────────────────────────────
 // Core hide (no screen switch): fade out overlay, stop anims, hide overlay
 // ─────────────────────────────────────────────────────────────
+// NOTE: This function performs backlight control which may interact with the
+// CH422G expander on I2C. Called asynchronously via lv_async_call to ensure
+// safe LVGL context. Avoid performing blocking I2C operations inside LVGL
+// callbacks to prevent screen transition delays.
 static void ss_hide_core_internal(void)
 {
     if (!s_active) return;
