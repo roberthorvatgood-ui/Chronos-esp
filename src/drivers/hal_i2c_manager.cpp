@@ -30,7 +30,7 @@ bool i2c_lock(uint32_t timeout_ms) {
         return true; // Fail-safe: allow operation to proceed
     }
 
-    TickType_t ticks = (timeout_ms == 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
+    TickType_t ticks = pdMS_TO_TICKS(timeout_ms);
     if (xSemaphoreTake(s_i2c_mutex, ticks) == pdTRUE) {
         return true;
     }
