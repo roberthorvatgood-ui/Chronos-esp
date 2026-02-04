@@ -3,6 +3,7 @@
 #include "pcf85063a_hooks.h"
 #include "waveshare_pcf85063a.h"
 #include "rtc_manager.h"
+#include "../drivers/hal_i2c_manager.h"
 
 /* OS/VL flag is bit7 of seconds (0x04) */
 
@@ -38,21 +39,31 @@ void pcf_rtc_one_shot_initialize()
         return;
     }
 
+    // Acquire I2C lock for entire initialization sequence
+    if (!hal::i2c_lock(200)) {
+        Serial.println("[PCF] One-shot init FAILED: cannot acquire I2C lock.");
+        return;
+    }
+
     // 2) Write correct time into the PCF hardware RTC
     if (!pcf_rtc_write_tm(now_tm)) {
         Serial.println("[PCF] One-shot init FAILED: cannot write time to PCF.");
+        hal::i2c_unlock();
         return;
     }
 
     // 3) Clear OS/VL flag
     if (!pcf_rtc_clear_os_flag()) {
         Serial.println("[PCF] One-shot init FAILED: cannot clear OS/VL.");
+        hal::i2c_unlock();
         return;
     }
 
     // 4) Read back OS/VL to confirm
     bool os = true;
     pcf_rtc_get_os_flag(os);
+
+    hal::i2c_unlock();
 
     Serial.println("[PCF] ================= One-Shot RTC Initialization =================");
     Serial.println("[PCF] Wrote correct time to PCF85063A.");
@@ -91,6 +102,12 @@ bool pcf_rtc_clear_os_flag(void) {
 
 static bool hw_reader_hook(struct tm& out)
 {
+    // Acquire I2C lock before RTC read
+    if (!hal::i2c_lock(100)) {
+        Serial.println("[PCF] HW reader: Failed to acquire I2C lock");
+        return false;
+    }
+    
     datetime_t t;
 
     // 1) First read (may be invalid immediately after boot)
@@ -105,6 +122,7 @@ static bool hw_reader_hook(struct tm& out)
     // 3) If still invalid, return false -> boot will fallback
     if (t.year < 2024) {
         Serial.println("[PCF] HW reader: still invalid after retry");
+        hal::i2c_unlock();
         return false;
     }
 
@@ -118,6 +136,7 @@ static bool hw_reader_hook(struct tm& out)
     out.tm_wday = t.dotw;
 
     Serial.println("[PCF] HW reader: time accepted");
+    hal::i2c_unlock();
     return true;
 }
 
@@ -125,6 +144,12 @@ static bool hw_reader_hook(struct tm& out)
 
 static bool hw_writer_hook(const struct tm& in)
 {
+    // Acquire I2C lock before RTC write
+    if (!hal::i2c_lock(100)) {
+        Serial.println("[PCF] HW writer: Failed to acquire I2C lock");
+        return false;
+    }
+    
     bool ok = pcf_rtc_write_tm(in);
 
     // Optional: auto-clear OS/VL if it is set
@@ -134,6 +159,7 @@ static bool hw_writer_hook(const struct tm& in)
         Serial.println("[PCF] Auto-cleared OS/VL after time update.");
     }
 
+    hal::i2c_unlock();
     return ok;
 }
 
@@ -148,10 +174,23 @@ bool init_pcf_hooks(void) {
 }
 
 void test_pcf_battery(void) {
+  // Acquire I2C lock for battery test
+  if (!hal::i2c_lock(100)) {
+    Serial.println("[PCF] Battery test FAILED: cannot acquire I2C lock");
+    return;
+  }
+  
   bool os=true;
-  if (!pcf_rtc_get_os_flag(os)) { Serial.println("[PCF] OS/VL read failed"); return; }
+  if (!pcf_rtc_get_os_flag(os)) { 
+    Serial.println("[PCF] OS/VL read failed"); 
+    hal::i2c_unlock();
+    return; 
+  }
 
   datetime_t hw{}; PCF85063A_Read_now(&hw);
+  
+  hal::i2c_unlock();
+  
   struct tm sys{}; time_t now=time(nullptr); localtime_r(&now,&sys);
 
   char hw_s[48]; datetime_to_str(hw_s, hw);

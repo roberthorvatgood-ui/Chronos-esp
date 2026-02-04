@@ -4,6 +4,7 @@
 #include "../core/config.h"
 #include "../core/gate_engine.h"
 #include "../drivers/hal_panel.h"   // hal::expander_get_handle(), esp_io_expander_get_level
+#include "../drivers/hal_i2c_manager.h"
 
 // Debounced logical levels: true = HIGH (beam OPEN), false = LOW (beam BLOCKED)
 static bool gGateALevel = true;
@@ -40,9 +41,17 @@ static inline int lvl_to_digital(bool v)    { return v ? HIGH : LOW; }
 // Read CH422G input bits via HAL's expander handle
 static uint8_t read_inputs_raw()
 {
+    // Acquire I2C lock before reading expander
+    if (!hal::i2c_lock(50)) {
+        // On lock timeout, treat as all HIGH (open) to avoid spurious triggers
+        Serial.println("[Input] WARNING: Failed to acquire I2C lock for input read");
+        return 0xFF;
+    }
+    
     esp_io_expander_handle_t h = hal::expander_get_handle();
     if (!h) {
         // Not ready yet; treat as all HIGH (open)
+        hal::i2c_unlock();
         return 0xFF;
     }
 
@@ -50,8 +59,11 @@ static uint8_t read_inputs_raw()
     const uint32_t mask = 0xFF;
     if (esp_io_expander_get_level(h, mask, &val) != ESP_OK) {
         // On error, keep previous state; return all HIGH so we don't spurious-trigger
+        hal::i2c_unlock();
         return 0xFF;
     }
+    
+    hal::i2c_unlock();
     return static_cast<uint8_t>(val & 0xFF);
 }
 

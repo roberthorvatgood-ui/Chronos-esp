@@ -3,6 +3,22 @@
  * Chronos – Main Application (.ino)
  * Integrated SD Export + Web UI
  * [Updated: 2026-01-25 13:30 CET]
+ * 
+ * ⚠️ IMPORTANT: I2C THREAD SAFETY
+ * ──────────────────────────────────────────────────────────────────────────
+ * All I2C operations (expander, RTC, SD CS control) are protected by a FreeRTOS
+ * mutex (hal::i2c_lock/unlock) to prevent bus contention.
+ * 
+ * LVGL CALLBACK WARNING:
+ * - DO NOT perform blocking I2C operations directly in LVGL event callbacks
+ * - DO NOT call hal::i2c_lock from LVGL callbacks running on CPU1
+ * - If you need I2C access from GUI, defer to a task or use async notification
+ * 
+ * For safe I2C access in application code, use:
+ *   if (hal::i2c_lock(timeout_ms)) {
+ *     // ... perform I2C operations ...
+ *     hal::i2c_unlock();
+ *   }
  *****/
 
 #include <Arduino.h>

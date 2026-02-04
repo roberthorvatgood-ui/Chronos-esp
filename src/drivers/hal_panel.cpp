@@ -9,6 +9,7 @@
  *  - IO‑expander helpers use pin mask (1u<<exio)
  *****/
 #include "hal_panel.h"
+#include "hal_i2c_manager.h"
 #include <Arduino.h>
 #include "driver/ledc.h"
 
@@ -107,6 +108,10 @@ namespace hal {
 
 bool init() {
   if (g_panel) return true;
+  
+  // Initialize I2C manager first
+  i2c_manager_init();
+  
   g_panel = new ESP_Panel();
   if (!g_panel) return false;
 
