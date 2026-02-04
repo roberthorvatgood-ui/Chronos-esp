@@ -56,6 +56,7 @@ static uint8_t read_inputs_raw()
     uint32_t val = 0;
     const uint32_t mask = 0xFF;
     esp_err_t err = esp_io_expander_get_level(h, mask, &val);
+    uint8_t result = static_cast<uint8_t>(val & 0xFF);
     
     hal::i2c_unlock();
 
@@ -63,7 +64,7 @@ static uint8_t read_inputs_raw()
         // On error, keep previous state; return all HIGH so we don't spurious-trigger
         return 0xFF;
     }
-    return static_cast<uint8_t>(val & 0xFF);
+    return result;
 }
 
 // Init: seed state and reset gate engine, no I2C setup here

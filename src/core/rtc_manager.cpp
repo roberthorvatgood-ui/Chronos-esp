@@ -224,8 +224,11 @@ void rtc_init(void) {
     if (!hal::i2c_lock(100)) {
       Serial.println("[RTC] HW reader skipped: I2C lock timeout");
     } else {
-      hw_ok = s_hw_reader(hw) && (hw.tm_year + 1900) >= 2020;
+      bool read_ok = s_hw_reader(hw);
       hal::i2c_unlock();
+      if (read_ok && (hw.tm_year + 1900) >= 2020) {
+        hw_ok = true;
+      }
     }
     
     if (hw_ok) {
