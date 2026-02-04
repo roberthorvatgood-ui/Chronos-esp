@@ -12,10 +12,8 @@
 
 namespace hal {
 
-namespace {
-  // FreeRTOS mutex for I2C bus access
-  static SemaphoreHandle_t s_i2c_mutex = nullptr;
-}
+// FreeRTOS mutex for I2C bus access
+static SemaphoreHandle_t s_i2c_mutex = nullptr;
 
 void i2c_manager_init() {
   if (s_i2c_mutex) return; // Already initialized
