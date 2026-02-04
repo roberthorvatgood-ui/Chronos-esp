@@ -7,8 +7,10 @@
  *  - Bounded wait for expander readiness
  *  - Honor begin(start_backlight_on)
  *  - IO‑expander helpers use pin mask (1u<<exio)
+ * [Updated: 2026-02-04] Initialize I2C executor
  *****/
 #include "hal_panel.h"
+#include "hal_i2c_executor.h"
 #include <Arduino.h>
 #include "driver/ledc.h"
 
@@ -119,6 +121,12 @@ bool init() {
 
 bool begin(bool start_backlight_on) {
   if (!g_panel) return false;
+
+  // Initialize I2C executor early (before any I2C operations)
+  if (!hal_i2c_executor_init(16)) {
+    Serial.println("[HAL] Failed to initialize I2C executor");
+    return false;
+  }
 
   // Bring up board/buses; ESP‑Panel sets up I2C/CH422G at the board level.
   g_panel->begin();

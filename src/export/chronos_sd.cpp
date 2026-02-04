@@ -3,6 +3,7 @@
  * Chronos – SD card bring-up (SPI) using HAL expander
  * [Updated: 2026-01-19 22:55 CET]
  * [Updated: 2026-01-24 17:05 CET] CLEAN: fix missing statics + ref-counted CS guard
+ * [Updated: 2026-02-04] Migrate to I2C executor
  *****/
 #include <Arduino.h>
 #include <SPI.h>
@@ -10,6 +11,7 @@
 #include "waveshare_sd_card.h"   // pins + EXIO masks (SDA=8, SCL=9, SD_CS mask)
 #include "export_fs.h"           // chronos::exportfs_set_fs(&SD)
 #include "src/drivers/hal_panel.h"
+#include "src/drivers/hal_i2c_executor.h"
 #include "chronos_sd.h"
 
 static bool s_sd_ready = false;
@@ -27,13 +29,46 @@ bool chronos_sd_is_ready() {
 }
 
 /* ---------- CS helpers (CH422G via HAL) ---------------------------------- */
+
+// Context for expander pinMode operation
+struct expander_pinmode_ctx {
+  uint8_t pin;
+  bool output;
+};
+
+// Executor operation: set expander pin mode
+static esp_err_t expander_pinmode_op(void* vctx) {
+  expander_pinmode_ctx* ctx = static_cast<expander_pinmode_ctx*>(vctx);
+  if (!ctx) return ESP_ERR_INVALID_ARG;
+  
+  return hal::expander_pinMode(ctx->pin, ctx->output) ? ESP_OK : ESP_FAIL;
+}
+
+// Context for expander digitalWrite operation
+struct expander_write_ctx {
+  uint8_t pin;
+  bool level;
+};
+
+// Executor operation: write expander pin level
+static esp_err_t expander_write_op(void* vctx) {
+  expander_write_ctx* ctx = static_cast<expander_write_ctx*>(vctx);
+  if (!ctx) return ESP_ERR_INVALID_ARG;
+  
+  return hal::expander_digitalWrite(ctx->pin, ctx->level) ? ESP_OK : ESP_FAIL;
+}
+
 static inline void cs_drive(bool low) {
   if (!hal::expander_wait_ready(800)) return;
 
   // Configure SD_CS direction once (reduces I2C traffic and failure rate)
   if (!s_cs_dir_set) {
     for (int i = 0; i < 3; ++i) {
-      if (hal::expander_pinMode(SD_CS, /*output*/ true)) { s_cs_dir_set = true; break; }
+      expander_pinmode_ctx ctx = { SD_CS, /*output*/ true };
+      if (hal::hal_i2c_exec_sync(expander_pinmode_op, &ctx, 100) == ESP_OK) {
+        s_cs_dir_set = true;
+        break;
+      }
       delay(2);
     }
   }
@@ -41,7 +76,8 @@ static inline void cs_drive(bool low) {
   // LOW selects, HIGH de-selects (retry a few times in case I2C is busy)
   const bool level_high = low ? /*LOW*/ false : /*HIGH*/ true;
   for (int i = 0; i < 3; ++i) {
-    if (hal::expander_digitalWrite(SD_CS, level_high)) break;
+    expander_write_ctx ctx = { SD_CS, level_high };
+    if (hal::hal_i2c_exec_sync(expander_write_op, &ctx, 100) == ESP_OK) break;
     delay(2);
   }
 

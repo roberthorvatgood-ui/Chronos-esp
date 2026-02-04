@@ -2,24 +2,62 @@
 /******************************************************************************
  * PCF85063A – OLD IDF I2C driver implementation (no Wire, no driver_ng)
  * Tolerant init: reuse I2C0 if already installed; do not abort on install error
+ * [Updated: 2026-02-04] Migrate to I2C executor
  ******************************************************************************/
 
 #include "waveshare_pcf85063a.h"
+#include "../drivers/hal_i2c_executor.h"
 #include <stdio.h>
 
 static inline uint8_t dec2bcd(uint8_t v){ return (uint8_t)(((v/10)<<4)|(v%10)); }
 static inline uint8_t bcd2dec(uint8_t v){ return (uint8_t)(((v>>4)*10) + (v & 0x0F)); }
 
-/* ----- OLD driver helpers on I2C0 ----- */
-static inline esp_err_t i2c_wr_reg(uint8_t reg, const uint8_t* data, size_t len, TickType_t to_ticks = pdMS_TO_TICKS(50)) {
+/* ----- I2C operation contexts and executor wrappers ----- */
+struct pcf_write_ctx {
+  uint8_t reg;
+  const uint8_t* data;
+  size_t len;
+  TickType_t timeout_ticks;
+};
+
+struct pcf_read_ctx {
+  uint8_t reg;
+  uint8_t* data;
+  size_t len;
+  TickType_t timeout_ticks;
+};
+
+static esp_err_t pcf_write_op(void* vctx) {
+  pcf_write_ctx* ctx = static_cast<pcf_write_ctx*>(vctx);
+  if (!ctx || !ctx->data || ctx->len > 8) return ESP_ERR_INVALID_ARG;
+  
   uint8_t buf[1+8];
-  if (len > 8) return ESP_ERR_INVALID_ARG;
-  buf[0] = reg;
-  for (size_t i=0;i<len;i++) buf[1+i] = data[i];
-  return i2c_master_write_to_device(I2C_RTC_PORT, PCF85063A_ADDRESS, buf, 1+len, to_ticks);
+  buf[0] = ctx->reg;
+  for (size_t i = 0; i < ctx->len; i++) {
+    buf[1+i] = ctx->data[i];
+  }
+  
+  return i2c_master_write_to_device(I2C_RTC_PORT, PCF85063A_ADDRESS, buf, 1 + ctx->len, ctx->timeout_ticks);
 }
+
+static esp_err_t pcf_read_op(void* vctx) {
+  pcf_read_ctx* ctx = static_cast<pcf_read_ctx*>(vctx);
+  if (!ctx || !ctx->data) return ESP_ERR_INVALID_ARG;
+  
+  return i2c_master_write_read_device(I2C_RTC_PORT, PCF85063A_ADDRESS, &ctx->reg, 1, ctx->data, ctx->len, ctx->timeout_ticks);
+}
+
+/* ----- OLD driver helpers on I2C0 (via executor) ----- */
+static inline esp_err_t i2c_wr_reg(uint8_t reg, const uint8_t* data, size_t len, TickType_t to_ticks = pdMS_TO_TICKS(50)) {
+  if (len > 8) return ESP_ERR_INVALID_ARG;
+  
+  pcf_write_ctx ctx = { reg, data, len, to_ticks };
+  return hal::hal_i2c_exec_sync(pcf_write_op, &ctx, 100);
+}
+
 static inline esp_err_t i2c_rd_reg(uint8_t reg, uint8_t* data, size_t len, TickType_t to_ticks = pdMS_TO_TICKS(50)) {
-  return i2c_master_write_read_device(I2C_RTC_PORT, PCF85063A_ADDRESS, &reg, 1, data, len, to_ticks);
+  pcf_read_ctx ctx = { reg, data, len, to_ticks };
+  return hal::hal_i2c_exec_sync(pcf_read_op, &ctx, 100);
 }
 
 /* ----- Public LL helpers ----- */
