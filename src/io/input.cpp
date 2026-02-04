@@ -4,7 +4,9 @@
 #include "../core/config.h"
 #include "../core/gate_engine.h"
 #include "../drivers/hal_panel.h"   // hal::expander_get_handle(), esp_io_expander_get_level
-#include "../drivers/hal_i2c_manager.h"
+#include "../drivers/hal_i2c_executor.h" // executor API
+#include "../drivers/hal_i2c_manager.h"  // fallback mutex (kept for compatibility)
+#include "esp_err.h"
 
 // Debounced logical levels: true = HIGH (beam OPEN), false = LOW (beam BLOCKED)
 static bool gGateALevel = true;
@@ -38,8 +40,25 @@ bool input_edge_falling(int prev, int curr) { return prev == HIGH && curr == LOW
 bool input_edge_rising (int prev, int curr) { return prev == LOW  && curr == HIGH; }
 static inline int lvl_to_digital(bool v)    { return v ? HIGH : LOW; }
 
-// Read CH422G input bits via HAL's expander handle
-// Protected by I2C mutex to avoid contention with SD CS writes and RTC
+// Executor request context for expander read
+struct expander_read_ctx {
+  esp_io_expander_handle_t h;
+  uint32_t mask;
+  uint32_t out_levels;
+};
+
+// Function that is executed in executor context to read expander inputs
+static esp_err_t expander_read_op(void* vctx) {
+  if (!vctx) return ESP_ERR_INVALID_ARG;
+  expander_read_ctx* ctx = static_cast<expander_read_ctx*>(vctx);
+  if (!ctx->h) return ESP_ERR_INVALID_ARG;
+  uint32_t val = 0;
+  esp_err_t r = esp_io_expander_get_level(ctx->h, ctx->mask, &val);
+  if (r == ESP_OK) ctx->out_levels = val;
+  return r;
+}
+
+// Read CH422G input bits via executor (safe from any task). Returns 0xFF on error.
 static uint8_t read_inputs_raw()
 {
     esp_io_expander_handle_t h = hal::expander_get_handle();
@@ -48,25 +67,25 @@ static uint8_t read_inputs_raw()
         return 0xFF;
     }
 
-    // Acquire I2C lock before reading expander
-    // NOTE: This is called from input_poll_and_publish (task context), NOT from ISR
-    if (!hal::i2c_lock(50)) {
-        // Timeout - skip this read cycle to avoid blocking the loop
-        // Serial.println("[Input] i2c_lock timeout, skipping read");
-        return 0xFF;  // Return all HIGH to avoid spurious triggers
-    }
+    expander_read_ctx ctx;
+    ctx.h = h;
+    ctx.mask = 0xFF;
+    ctx.out_levels = 0;
 
-    uint32_t val = 0;
-    const uint32_t mask = 0xFF;
-    esp_err_t err = esp_io_expander_get_level(h, mask, &val);
-    
-    hal::i2c_unlock();
-
+    // synchronous request: runs on core 0
+    esp_err_t err = hal_i2c_exec_sync(expander_read_op, &ctx, 120);
     if (err != ESP_OK) {
-        // On error, keep previous state; return all HIGH so we don't spurious-trigger
-        return 0xFF;
+      // fallback: try a quick mutex read (rare)
+      if (hal::i2c_lock(40)) {
+        uint32_t val = 0;
+        esp_err_t r = esp_io_expander_get_level(h, 0xFF, &val);
+        hal::i2c_unlock();
+        if (r == ESP_OK) return static_cast<uint8_t>(val & 0xFF);
+      }
+      return 0xFF;
     }
-    return static_cast<uint8_t>(val & 0xFF);
+
+    return static_cast<uint8_t>(ctx.out_levels & 0xFF);
 }
 
 // Init: seed state and reset gate engine, no I2C setup here

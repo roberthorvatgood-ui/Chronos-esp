@@ -1,8 +1,7 @@
-
 /*****
  * Chronos – Main Application (.ino)
  * Integrated SD Export + Web UI
- * [Updated: 2026-01-25 13:30 CET]
+ * [Updated: 2026-02-04 21:39 CET]
  *****/
 
 #include <Arduino.h>
@@ -12,6 +11,7 @@
 #endif
 
 #include "src/drivers/hal_panel.h"
+#include "src/drivers/hal_i2c_executor.h" // I2C executor init + APIs
 #include "src/gui/gui.h"
 #include "src/net/app_network.h"
 #include "src/core/event_bus.h"
@@ -74,6 +74,19 @@ static void load_screensaver_timeout() {
   Serial.printf("[Setup] Screensaver timeout (s): %lu\n", (unsigned long)gScreenSaverTimeoutS);
 }
 
+// Helper: executor read op for CH422G (used only for a one-time debug read here)
+struct __expander_read_ctx {
+  uint32_t mask;
+  uint32_t val;
+};
+static esp_err_t __expander_read_op(void* vctx) {
+  if (!vctx) return ESP_ERR_INVALID_ARG;
+  __expander_read_ctx* ctx = static_cast<__expander_read_ctx*>(vctx);
+  esp_io_expander_handle_t h = hal::expander_get_handle();
+  if (!h) return ESP_FAIL;
+  return esp_io_expander_get_level(h, ctx->mask, &ctx->val);
+}
+
 // [2026-01-18 22:20 CET] UPDATED: setup() order – apply Wi‑Fi preference before AP start
 void setup() {
   Serial.begin(115200);
@@ -99,6 +112,11 @@ void setup() {
   if (!hal::begin()) Serial.println("[HAL] begin() failed");
   if (!hal::lvgl_init()) Serial.println("[HAL] lvgl_init() failed");
 
+  // Start the central I2C executor (runs on core 0). Required before using executor-based reads/writes.
+  if (!hal_i2c_executor_init(16)) {
+    Serial.println("[HAL] I2C executor init failed");
+  }
+
   // --- Network bring-up honoring saved General Settings (apply first) ---
   const bool wifi_on = load_wifi_pref_on();
   network_set_enabled(wifi_on);
@@ -117,18 +135,14 @@ void setup() {
   // ---- Export system: mount SD & start Web UI (AP mode) -----------------
   hal::expander_wait_ready(800);
 
-    // DEBUG: one-time CH422G read
+  // DEBUG: one-time CH422G read via executor (safe, serialized)
   {
-      esp_io_expander_handle_t h = hal::expander_get_handle();
-      if (h) {
-          uint32_t val = 0;
-          if (esp_io_expander_get_level(h, 0xFF, &val) == ESP_OK) {
-              Serial.printf("[DEBUG] CH422G initial IN=0x%02X\n", (unsigned)(val & 0xFF));
-          } else {
-              Serial.println("[DEBUG] CH422G read failed");
-          }
+      __expander_read_ctx ctx{ 0xFF, 0 };
+      esp_err_t r = hal_i2c_exec_sync(__expander_read_op, &ctx, 200);
+      if (r == ESP_OK) {
+          Serial.printf("[DEBUG] CH422G initial IN=0x%02X\n", (unsigned)(ctx.val & 0xFF));
       } else {
-          Serial.println("[DEBUG] CH422G handle not ready");
+          Serial.printf("[DEBUG] CH422G read failed (err=0x%08x)\n", (unsigned)r);
       }
   }
 
