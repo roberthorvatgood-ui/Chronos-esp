@@ -88,6 +88,9 @@ bool pcf_rtc_clear_os_flag(void) {
 
 /* rtc_manager hooks */
 
+// NOTE: These hooks are called from task context (rtc_worker_task) and rtc_init().
+// I2C mutex protection is provided by the underlying PCF85063A_ReadRegs/WriteRegs
+// functions in waveshare_pcf85063a.cpp, so no additional locking is needed here.
 
 static bool hw_reader_hook(struct tm& out)
 {
