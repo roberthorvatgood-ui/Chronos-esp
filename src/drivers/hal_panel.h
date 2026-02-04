@@ -48,6 +48,18 @@ namespace drivers = esp_panel::drivers;
 drivers::LCD*   lcd();
 drivers::Touch* touch();
 
+// ── Touch (thread-safe wrapper) ────────────────────────────────────────────
+/**
+ * Read touch points safely via I2C executor.
+ * This ensures touch I2C reads happen on core 0, preventing WDT issues.
+ * 
+ * @param points Output buffer for touch points
+ * @param max_points Maximum number of points to read
+ * @param timeout_ms Timeout for I2C operation (default 50ms)
+ * @return Number of touch points read, or -1 on error
+ */
+int touch_read_points_safe(void* points, int max_points, uint32_t timeout_ms = 50);
+
 // ── Backlight control ──────────────────────────────────────────────────────
 void backlight_on();
 void backlight_off();

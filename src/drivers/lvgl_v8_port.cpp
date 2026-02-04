@@ -127,7 +127,8 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
   Touch *tp = (Touch *)indev_drv->user_data;
   TouchPoint p;
 
-  int n = tp->readPoints(&p, 1, 0);
+  // Use thread-safe touch read via I2C executor (runs on core 0)
+  int n = hal::touch_read_points_safe(&p, 1, 50);
 
   if (n > 0) {
     const bool was_ss = gScreenSaverActive;

@@ -206,4 +206,43 @@ esp_io_expander_handle_t expander_get_handle() {
   return s_hal_expander;
 }
 
+// ── Touch (thread-safe wrapper) ────────────────────────────────────────────
+
+struct touch_read_ctx {
+  drivers::Touch* tp;
+  void* points;
+  int max_points;
+  int* result;
+};
+
+static esp_err_t touch_read_op(void* vctx) {
+  touch_read_ctx* ctx = static_cast<touch_read_ctx*>(vctx);
+  if (!ctx || !ctx->tp || !ctx->points || !ctx->result) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  
+  // Call the ESP_Panel touch driver's readPoints method
+  // This will perform I2C reads internally, but now runs on core 0
+  *ctx->result = ctx->tp->readPoints((esp_panel::drivers::TouchPoint*)ctx->points, ctx->max_points, 0);
+  
+  return ESP_OK;
+}
+
+int touch_read_points_safe(void* points, int max_points, uint32_t timeout_ms) {
+  drivers::Touch* tp = touch();
+  if (!tp || !points || max_points <= 0) {
+    return -1;
+  }
+  
+  int result = -1;
+  touch_read_ctx ctx = { tp, points, max_points, &result };
+  
+  esp_err_t err = hal_i2c_exec_sync(touch_read_op, &ctx, timeout_ms);
+  if (err != ESP_OK) {
+    return -1;
+  }
+  
+  return result;
+}
+
 } // namespace hal
