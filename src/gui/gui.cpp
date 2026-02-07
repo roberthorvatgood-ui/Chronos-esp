@@ -78,10 +78,23 @@ extern bool gScreenSaverActive;
 extern volatile bool gWakeFromSaverPending;  // NEW: deferred wake flag
 extern void experiments_emit_csv(Print& out);
 
+
+// Global references to simulation buttons for animation
+static lv_obj_t* g_sim_btn_a = nullptr;
+static lv_obj_t* g_sim_btn_b = nullptr;
+// Flag: only update buttons when on experiment screen
+static bool g_experiment_screen_active = false;
 // Flag to trigger history update from LVGL timer (safe context)
 static bool g_history_update_pending = false;
 static const char* g_pending_history_mode = nullptr;
 static lv_timer_t* g_history_update_timer = nullptr;
+
+
+// Clear simulation button pointers (call when leaving experiment screens)
+static void clear_sim_button_refs() {
+  g_sim_btn_a = nullptr;
+  g_sim_btn_b = nullptr;
+}
 
 // ── Embedded splash asset (welcome_screen.c/.h) ──
 // Try common relative paths; error out if not found.
@@ -183,6 +196,26 @@ static void ap_export_close_btn_cb(lv_event_t* /*e*/)
     ap_export_stop();
     // Return to Settings; switch reflects OFF
     gui_show_settings();
+}
+
+// Animate simulation buttons based on real gate state
+void gui_set_sim_button_state(int gate_index, bool active) {
+  lv_obj_t* btn = nullptr;
+  
+  if (gate_index == 0) btn = g_sim_btn_a;
+  else if (gate_index == 1) btn = g_sim_btn_b;
+  
+  if (!btn) return;
+  
+  if (active) {
+    // Gate is BLOCKED (active) - show green
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x00FF00), 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_100, 0);
+  } else {
+    // Gate is UNBLOCKED - restore default gray (same as CLR_BTN)
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x30324A), 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_80, 0);
+  }
 }
 
 // [2026-01-26 21:28 CET] FIX: AP modal — ALL texts use tr(); body uses key "AP modal instructions"
@@ -371,6 +404,24 @@ static const int FIELD_W       = 260;
 static const int FIELD_H       = 60;
 
 
+// Helper: Hide keyboard when clicking outside textarea
+static void on_scr_click_hide_kb(lv_event_t* e)
+{
+  lv_obj_t* kb = (lv_obj_t*)lv_event_get_user_data(e);
+  if (kb && !lv_obj_has_flag(kb, LV_OBJ_FLAG_HIDDEN)) {
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+// Helper: Hide keyboard when textarea loses focus
+static void on_ta_defocus(lv_event_t* e)
+{
+  lv_obj_t* kb = (lv_obj_t*)lv_event_get_user_data(e);
+  if (kb && !lv_obj_has_flag(kb, LV_OBJ_FLAG_HIDDEN)) {
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
 
 // [2026-01-18 15:45 CET] NEW: Set unified Wi-Fi icon color by Internet status
 //  - WiFi OFF      -> dark gray  (#404060)
@@ -390,6 +441,7 @@ static void gui_set_net_icon_color(bool wifi_enabled, bool internet_ok)
   if (wifi_enabled) c = internet_ok ? lv_color_hex(0x00E07A) : lv_color_hex(0x8080A0);
   lv_obj_set_style_text_color(g_hdr_net_icon, c, 0);
 }
+
 
 // ── Header clock tick — now with seconds ─────────────────────────────────────
 
@@ -1128,22 +1180,23 @@ static lv_obj_t* build_header(lv_obj_t* scr, const char* title_text)
     lv_obj_center(lbl);
   }
 
-  // Unified Wi‑Fi icon
+  // Unified Wi‑Fi icon (hidden, but kept for compatibility)
   if (g_hdr_net_icon) { lv_obj_del(g_hdr_net_icon); g_hdr_net_icon = nullptr; }
   if (g_hdr_ap_badge) { lv_obj_del(g_hdr_ap_badge); g_hdr_ap_badge = nullptr; }
 
   g_hdr_net_icon = lv_label_create(left);
   lv_label_set_text(g_hdr_net_icon, LV_SYMBOL_WIFI);
   lv_obj_set_style_text_font(g_hdr_net_icon, &lv_font_montserrat_28, 0);
+  // HIDE WiFi icon - we only show AP badge
+  lv_obj_add_flag(g_hdr_net_icon, LV_OBJ_FLAG_HIDDEN);
 
-  // Tiny "AP" text badge (Option D2 / A-size)
+  // Tiny "AP" text badge (standalone, no WiFi icon)
   g_hdr_ap_badge = lv_label_create(left);
   lv_label_set_text(g_hdr_ap_badge, "AP");
   lv_obj_set_style_text_font(g_hdr_ap_badge, FONT_SMALL, 0);
   lv_obj_set_style_text_color(g_hdr_ap_badge, lv_color_hex(0x00E07A), 0);
-
-  // Place badge near the Wi‑Fi icon (small offset)
-  lv_obj_align_to(g_hdr_ap_badge, g_hdr_net_icon, LV_ALIGN_OUT_TOP_RIGHT, -6, -6);
+  // AP badge appears in the flex layout of 'left' container (after back button)
+  // Hidden by default, shown when AP is running
   if (!g_ap_running) lv_obj_add_flag(g_hdr_ap_badge, LV_OBJ_FLAG_HIDDEN);
 
   // CENTER: Title
@@ -1780,6 +1833,7 @@ void gui_show_stopwatch()
 
     // Show the screen
     lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
+    
 }
 
 // Stopwatch Settings — dropdown view
@@ -1891,6 +1945,7 @@ static void sim_cv_gate_b(lv_event_t* /*e*/)
 
 void gui_show_cv()
 {
+  g_experiment_screen_active = true;  // Enable button animation
   g_current_screen = CurrentScreen::CV;
   header_stop_and_clear();
   load_general_prefs();
@@ -1903,22 +1958,20 @@ void gui_show_cv()
   build_header(scr, tr("Linear Motion (CV)"));
 
   int topOffset = HEADER_H;
-  if (g_sim_enabled) {
-    lv_obj_t* sim_row = lv_obj_create(scr);
-    lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
-    lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
-    lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  // ALWAYS show simulation buttons (animate on real gate events)
+  lv_obj_t* sim_row = lv_obj_create(scr);
+  lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
+  lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
+  lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
+  lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
 
-        // ⬇️ Make non-scrollable
-    lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
-    lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
-
-    lv_obj_t* bA = make_sim_btn(sim_row, tr("Gate A"), sim_cv_gate_a);
-    lv_obj_t* bB = make_sim_btn(sim_row, tr("Gate B"), sim_cv_gate_b);
-    lv_obj_align(bA, LV_ALIGN_LEFT_MID, 20, 0);
-    lv_obj_align(bB, LV_ALIGN_LEFT_MID, 160, 0);
-    topOffset += SIMROW_H;
-  }
+  g_sim_btn_a = make_sim_btn(sim_row, tr("Gate A"), sim_cv_gate_a);
+  g_sim_btn_b = make_sim_btn(sim_row, tr("Gate B"), sim_cv_gate_b);
+  lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
+  lv_obj_align(g_sim_btn_b, LV_ALIGN_LEFT_MID, 160, 0);
+  topOffset += SIMROW_H;
+  
 
   int contentH = SCREEN_HEIGHT - topOffset - FOOTER_H;
   lv_obj_t* content = lv_obj_create(scr);
@@ -1961,6 +2014,8 @@ void gui_show_cv()
   update_history("CV");
 
   lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
+    // Start button animation timer
+  
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2051,6 +2106,7 @@ static void pg_settings_cb(lv_event_t* /*e*/)
 
 void gui_show_photogate()
 {
+  g_experiment_screen_active = true;  // Enable button animation
   g_current_screen = CurrentScreen::Photogate;
   header_stop_and_clear();
   load_general_prefs();
@@ -2063,22 +2119,21 @@ void gui_show_photogate()
   build_header(scr, tr("Photogate Speed"));
 
   int topOffset = HEADER_H;
-  if (g_sim_enabled) {
-    lv_obj_t* sim_row = lv_obj_create(scr);
-    lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
-    lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
-    lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  // ALWAYS show simulation buttons (animate on real gate events)
+  lv_obj_t* sim_row = lv_obj_create(scr);
+  lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
+  lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
+  lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
+  lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
 
-    // ⬇️ Make non-scrollable
-    lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
-    lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
-
-    lv_obj_t* bBlk = make_sim_btn(sim_row, tr("Block"),   sim_pg_block);
-    lv_obj_t* bUnb = make_sim_btn(sim_row, tr("Unblock"), sim_pg_unblock);
-    lv_obj_align(bBlk, LV_ALIGN_LEFT_MID, 20, 0);
-    lv_obj_align(bUnb, LV_ALIGN_LEFT_MID, 160, 0);
-    topOffset += SIMROW_H;
-  }
+  // Note: Photogate uses "Block"/"Unblock" but maps to Gate A/B internally
+  g_sim_btn_a = make_sim_btn(sim_row, tr("Block"),   sim_pg_block);
+  g_sim_btn_b = make_sim_btn(sim_row, tr("Unblock"), sim_pg_unblock);
+  lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
+  lv_obj_align(g_sim_btn_b, LV_ALIGN_LEFT_MID, 160, 0);
+  topOffset += SIMROW_H;
+  
 
   int contentH = SCREEN_HEIGHT - topOffset - FOOTER_H;
   lv_obj_t* content = lv_obj_create(scr);
@@ -2120,6 +2175,8 @@ void gui_show_photogate()
   update_history("Photogate");
 
   lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
+    // Start button animation timer
+  
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2208,6 +2265,7 @@ static void ua_gate_b_event(lv_event_t* e)
 
 void gui_show_ua()
 {
+  g_experiment_screen_active = true;  // Enable button animation
   g_current_screen = CurrentScreen::UA;
   header_stop_and_clear();
   load_general_prefs();
@@ -2220,24 +2278,26 @@ void gui_show_ua()
   build_header(scr, tr("Uniform Acceleration"));
 
   int topOffset = HEADER_H;
-  // Simulation row: two buttons (hold = block; release = unblock)
+  
+  // ALWAYS show simulation buttons (even when simulation is OFF)
   lv_obj_t* sim_row = lv_obj_create(scr);
   lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
   lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
   lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
-
-  // ⬇️ Make non-scrollable
   lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
   lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
 
-  lv_obj_t* bA = make_sim_btn(sim_row, tr("Gate A (hold)"), nullptr);
-  lv_obj_t* bB = make_sim_btn(sim_row, tr("Gate B (hold)"), nullptr);
-  lv_obj_align(bA, LV_ALIGN_LEFT_MID, 20, 0);
-  lv_obj_align(bB, LV_ALIGN_LEFT_MID, 160, 0);
-  lv_obj_add_event_cb(bA, ua_gate_a_event, LV_EVENT_PRESSED,  nullptr);
-  lv_obj_add_event_cb(bA, ua_gate_a_event, LV_EVENT_RELEASED, nullptr);
-  lv_obj_add_event_cb(bB, ua_gate_b_event, LV_EVENT_PRESSED,  nullptr);
-  lv_obj_add_event_cb(bB, ua_gate_b_event, LV_EVENT_RELEASED, nullptr);
+  g_sim_btn_a = make_sim_btn(sim_row, tr("Gate A (hold)"), nullptr);
+  g_sim_btn_b = make_sim_btn(sim_row, tr("Gate B (hold)"), nullptr);
+  lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
+  lv_obj_align(g_sim_btn_b, LV_ALIGN_LEFT_MID, 160, 0);
+  
+  // Add event handlers (will check g_sim_enabled inside)
+  lv_obj_add_event_cb(g_sim_btn_a, ua_gate_a_event, LV_EVENT_PRESSED,  nullptr);
+  lv_obj_add_event_cb(g_sim_btn_a, ua_gate_a_event, LV_EVENT_RELEASED, nullptr);
+  lv_obj_add_event_cb(g_sim_btn_b, ua_gate_b_event, LV_EVENT_PRESSED,  nullptr);
+  lv_obj_add_event_cb(g_sim_btn_b, ua_gate_b_event, LV_EVENT_RELEASED, nullptr);
+  
   topOffset += SIMROW_H;
 
   int contentH = SCREEN_HEIGHT - topOffset - FOOTER_H;
@@ -2280,6 +2340,8 @@ void gui_show_ua()
   update_history("UA");
 
   lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
+    // Start button animation timer
+  
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2370,6 +2432,7 @@ static void ff_settings_cb(lv_event_t* /*e*/)
 
 void gui_show_freefall()
 {
+  g_experiment_screen_active = true;  // Enable button animation
   g_current_screen = CurrentScreen::FreeFall;
   header_stop_and_clear();
   load_general_prefs();
@@ -2382,17 +2445,20 @@ void gui_show_freefall()
   build_header(scr, tr("Free Fall"));
 
   int topOffset = HEADER_H;
-  if (g_sim_enabled) {
-    lv_obj_t* sim_row = lv_obj_create(scr);
-    lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
-    lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
-    lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
-    lv_obj_t* bA = make_sim_btn(sim_row, tr("Gate A"), sim_ff_gate_a);
-    lv_obj_t* bB = make_sim_btn(sim_row, tr("Gate B"), sim_ff_gate_b);
-    lv_obj_align(bA, LV_ALIGN_LEFT_MID, 20, 0);
-    lv_obj_align(bB, LV_ALIGN_LEFT_MID, 160, 0);
-    topOffset += SIMROW_H;
-  }
+  // ALWAYS show simulation buttons (animate on real gate events)
+  lv_obj_t* sim_row = lv_obj_create(scr);
+  lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
+  lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
+  lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
+  lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
+
+  g_sim_btn_a = make_sim_btn(sim_row, tr("Gate A"), sim_ff_gate_a);
+  g_sim_btn_b = make_sim_btn(sim_row, tr("Gate B"), sim_ff_gate_b);
+  lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
+  lv_obj_align(g_sim_btn_b, LV_ALIGN_LEFT_MID, 160, 0);
+  topOffset += SIMROW_H;
+  
 
   int contentH = SCREEN_HEIGHT - topOffset - FOOTER_H;
   lv_obj_t* content = lv_obj_create(scr);
@@ -2434,6 +2500,8 @@ void gui_show_freefall()
   update_history("FreeFall");
 
   lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
+    // Start button animation timer
+  
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2510,6 +2578,7 @@ static void in_gate_b_event(lv_event_t* e)
 
 void gui_show_incline()
 {
+  g_experiment_screen_active = true;  // Enable button animation
   g_current_screen = CurrentScreen::Incline;
   header_stop_and_clear();
   load_general_prefs();
@@ -2522,26 +2591,24 @@ void gui_show_incline()
   build_header(scr, tr("Inclined Plane"));
 
   int topOffset = HEADER_H;
-  if (g_sim_enabled) {
-    lv_obj_t* sim_row = lv_obj_create(scr);
-    lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
-    lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
-    lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  // ALWAYS show simulation buttons (animate on real gate events)
+  lv_obj_t* sim_row = lv_obj_create(scr);
+  lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
+  lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
+  lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
+  lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
 
-    // ⬇️ Make non-scrollable
-    lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
-    lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
-    
-    lv_obj_t* bA = make_sim_btn(sim_row, tr("Gate A (hold)"), nullptr);
-    lv_obj_t* bB = make_sim_btn(sim_row, tr("Gate B (hold)"), nullptr);
-    lv_obj_align(bA, LV_ALIGN_LEFT_MID, 20, 0);
-    lv_obj_align(bB, LV_ALIGN_LEFT_MID, 160, 0);
-    lv_obj_add_event_cb(bA, in_gate_a_event, LV_EVENT_PRESSED,  nullptr);
-    lv_obj_add_event_cb(bA, in_gate_a_event, LV_EVENT_RELEASED, nullptr);
-    lv_obj_add_event_cb(bB, in_gate_b_event, LV_EVENT_PRESSED,  nullptr);
-    lv_obj_add_event_cb(bB, in_gate_b_event, LV_EVENT_RELEASED, nullptr);
-    topOffset += SIMROW_H;
-  }
+  g_sim_btn_a = make_sim_btn(sim_row, tr("Gate A (hold)"), nullptr);
+  g_sim_btn_b = make_sim_btn(sim_row, tr("Gate B (hold)"), nullptr);
+  lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
+  lv_obj_align(g_sim_btn_b, LV_ALIGN_LEFT_MID, 160, 0);
+  lv_obj_add_event_cb(g_sim_btn_a, in_gate_a_event, LV_EVENT_PRESSED,  nullptr);
+  lv_obj_add_event_cb(g_sim_btn_a, in_gate_a_event, LV_EVENT_RELEASED, nullptr);
+  lv_obj_add_event_cb(g_sim_btn_b, in_gate_b_event, LV_EVENT_PRESSED,  nullptr);
+  lv_obj_add_event_cb(g_sim_btn_b, in_gate_b_event, LV_EVENT_RELEASED, nullptr);
+  topOffset += SIMROW_H;
+  
 
   int contentH = SCREEN_HEIGHT - topOffset - FOOTER_H;
   lv_obj_t* content = lv_obj_create(scr);
@@ -2584,6 +2651,8 @@ void gui_show_incline()
   update_history("Incline");
 
   lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
+    // Start button animation timer
+  
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2658,6 +2727,7 @@ static void ta_settings_cb(lv_event_t* /*e*/)
 
 void gui_show_tacho()
 {
+  g_experiment_screen_active = true;  // Enable button animation
   g_current_screen = CurrentScreen::Tachometer;
   header_stop_and_clear();
   load_general_prefs();
@@ -2670,20 +2740,20 @@ void gui_show_tacho()
   build_header(scr, tr("Tachometer"));
 
   int topOffset = HEADER_H;
-  if (g_sim_enabled) {
-    lv_obj_t* sim_row = lv_obj_create(scr);
-    lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
-    lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
-    lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  // ALWAYS show simulation button (animate on real gate events)
+  lv_obj_t* sim_row = lv_obj_create(scr);
+  lv_obj_set_size(sim_row, SCREEN_WIDTH, SIMROW_H);
+  lv_obj_align(sim_row, LV_ALIGN_TOP_MID, 0, HEADER_H);
+  lv_obj_set_style_bg_opa(sim_row, LV_OPA_TRANSP, 0);
+  lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
+  lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
 
-    // ⬇️ Make non-scrollable
-    lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
-    lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
-    
-    lv_obj_t* bPulse = make_sim_btn(sim_row, tr("Pulse A"), sim_ta_pulse);
-    lv_obj_align(bPulse, LV_ALIGN_LEFT_MID, 20, 0);
-    topOffset += SIMROW_H;
-  }
+  // Tachometer only uses Gate A (single pulse input)
+  g_sim_btn_a = make_sim_btn(sim_row, tr("Pulse A"), sim_ta_pulse);
+  lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
+  g_sim_btn_b = nullptr;  // Tachometer doesn't use Gate B
+  topOffset += SIMROW_H;
+  
 
   int contentH = SCREEN_HEIGHT - topOffset - FOOTER_H;
   lv_obj_t* content = lv_obj_create(scr);
@@ -2726,6 +2796,8 @@ void gui_show_tacho()
   update_history("Tachometer");
 
   lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
+    // Start button animation timer
+  
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2798,6 +2870,8 @@ static void on_wifi_export_cb(lv_event_t* e)
 // [2026-01-18 14:20 CET] UPDATED: Main Menu now includes "WiFi Export" button
 void gui_show_main_menu()
 {
+      // Stop animation timer
+    g_experiment_screen_active = false;  // Disable button animation
     g_current_screen = CurrentScreen::MainMenu;
     header_stop_and_clear();
 
@@ -2854,6 +2928,7 @@ void gui_show_main_menu()
 // [2026-01-18 14:58 CET] NEW: WiFi Export Controls Screen
 void gui_show_wifi_export()
 {
+     
     g_current_screen = CurrentScreen::WifiSettings; // reuse enum
     header_stop_and_clear();
     lv_obj_t* scr = lv_obj_create(NULL);
@@ -3027,6 +3102,8 @@ static void on_ss_save_click(lv_event_t* e)
 // - Unified net icon coloring + AP badge are driven by on_sw_wifi_changed / on_sw_ap_changed.
 void gui_show_settings()
 {
+      // Stop animation timer
+    g_experiment_screen_active = false;  // Disable button animation
     g_current_screen = CurrentScreen::Settings;
     header_stop_and_clear();
     load_general_prefs();
@@ -3244,39 +3321,86 @@ static void on_ta_focus(lv_event_t* e)
     }
 }
 
-
-static void on_ta_defocus(lv_event_t* e)
+void gui_show_cv_settings()
 {
-    lv_obj_t* kb = (lv_obj_t*)lv_event_get_user_data(e);
-    lv_obj_t* ta = lv_event_get_target(e);
+   
+  g_experiment_screen_active = false;  // Disable button animation
+  g_current_screen = CurrentScreen::CVSettings;  // Fixed: no underscore
+  header_stop_and_clear();
 
-    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    lv_keyboard_set_textarea(kb, NULL);
+  lv_obj_t* scr = lv_obj_create(NULL);
+  lv_obj_set_size(scr, SCREEN_WIDTH, SCREEN_HEIGHT);
+  lv_obj_set_style_bg_color(scr, CLR_BG(), 0);
+  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+  build_header(scr, tr("CV Settings"));
 
-    if (lv_keyboard_get_mode(kb) == LV_KEYBOARD_MODE_NUMBER) {
-        if (ta == s_edit_ta) {
-            if (!s_edit_made) {
-                lv_textarea_set_text(ta, s_old_value); // no edit → keep old
-            }
-            end_edit_session(); // also resets one-shot flag
-        }
+  // Content area
+  lv_obj_t* content = lv_obj_create(scr);
+  lv_obj_set_size(content, SCREEN_WIDTH, SCREEN_HEIGHT - HEADER_H);
+  lv_obj_align(content, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
+  lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+  lv_obj_set_style_pad_all(content, 20, 0);
+  lv_obj_set_style_pad_row(content, 16, 0);
+  apply_no_borders(content);
+
+  // Distance Between Gates setting
+  lv_obj_t* row_dist = make_row(content, 60);
+  {
+    lv_obj_t* lbl = lv_label_create(row_dist);
+    lv_label_set_text(lbl, tr("Distance Between Gates (mm)"));
+    lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(lbl, FONT_LABEL, 0);
+
+    make_spacer(row_dist);
+
+    uint16_t dist_mm = experiments_get_distance_mm();  // Fixed function name
+    lv_obj_t* ta = lv_textarea_create(row_dist);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_max_length(ta, 5);
+    lv_obj_set_width(ta, 120);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u", dist_mm);
+    lv_textarea_set_text(ta, buf);
+    lv_obj_set_style_text_align(ta, LV_TEXT_ALIGN_CENTER, 0);
+    
+    // Store textarea reference for saving
+    lv_obj_set_user_data(row_dist, ta);
+  }
+
+  // Save button
+  lv_obj_t* btn_save = lv_btn_create(content);
+  lv_obj_set_size(btn_save, 200, 60);
+  lv_obj_set_style_radius(btn_save, 10, 0);
+  lv_obj_set_style_bg_color(btn_save, lv_color_hex(0x2EBF6D), 0);
+  lv_obj_align(btn_save, LV_ALIGN_CENTER, 0, 0);
+  
+  lv_obj_t* lbl_save = lv_label_create(btn_save);
+  lv_label_set_text(lbl_save, tr("Save"));
+  lv_obj_set_style_text_font(lbl_save, FONT_LABEL, 0);
+  lv_obj_set_style_text_color(lbl_save, lv_color_white(), 0);
+  lv_obj_center(lbl_save);
+  
+  // Save callback - store the textarea pointer
+  lv_obj_set_user_data(btn_save, row_dist);
+  lv_obj_add_event_cb(btn_save, [](lv_event_t* e) {
+    lv_obj_t* row = (lv_obj_t*)lv_event_get_user_data(e);
+    lv_obj_t* ta = (lv_obj_t*)lv_obj_get_user_data(row);
+    
+    const char* txt = lv_textarea_get_text(ta);
+    uint16_t val = (uint16_t)atoi(txt);
+    if (val > 0 && val <= 10000) {  // Sanity check: 1mm to 10m
+      experiments_set_distance_mm(val);  // Fixed function name
+      Serial.printf("[CV Settings] Distance set to %u mm\n", val);
+      gui_show_cv();  // Return to CV screen
+    } else {
+      Serial.println("[CV Settings] Invalid distance value");
     }
-}
+  }, LV_EVENT_CLICKED, nullptr);
 
-
-static void on_scr_click_hide_kb(lv_event_t* e)
-{
-    lv_obj_t* kb = (lv_obj_t*)lv_event_get_user_data(e);
-    if (!kb) return;
-
-    lv_obj_t* ta = lv_keyboard_get_textarea(kb);
-    if (ta && ta == s_edit_ta && !s_edit_made) {
-        lv_textarea_set_text(ta, s_old_value);
-    }
-
-    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    lv_keyboard_set_textarea(kb, NULL);
-    end_edit_session(); // resets the one‑shot too
+  lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
 }
 
 
@@ -3306,51 +3430,7 @@ static void on_cv_save_click(lv_event_t* e)
   gui_show_cv();
 }
 
-void gui_show_cv_settings()
-{
-  g_current_screen = CurrentScreen::CVSettings;
-  header_stop_and_clear();
 
-  lv_obj_t* scr = lv_obj_create(NULL);
-  lv_obj_set_size(scr, SCREEN_WIDTH, SCREEN_HEIGHT);
-  lv_obj_set_style_bg_color(scr, CLR_BG(), 0);
-  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
-  build_header(scr, tr("CV Settings"));
-
-  lv_obj_t* content = lv_obj_create(scr);
-  lv_obj_set_size(content, SCREEN_WIDTH, SCREEN_HEIGHT - HEADER_H);
-  lv_obj_align(content, LV_ALIGN_BOTTOM_MID, 0, 0);
-  lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
-
-  lv_obj_t* kb = lv_keyboard_create(scr);
-  lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
-  lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-  lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-
-  lv_obj_t* cap = make_caption(content, tr("Distance between Gate A and Gate B (mm):"));
-  lv_obj_align(cap, LV_ALIGN_TOP_LEFT, MARGIN_LEFT, CAPTION_Y0);
-
-  char init_dist[12]; snprintf(init_dist, sizeof(init_dist), "%u", (unsigned)experiments_get_distance_mm());
-  lv_obj_t* ta = lv_textarea_create(content);
-  lv_textarea_set_one_line(ta, true);
-  lv_textarea_set_text(ta, init_dist);
-  lv_textarea_set_placeholder_text(ta, "e.g. 500");
-  lv_obj_set_size(ta, FIELD_W, FIELD_H);
-  lv_obj_align(ta, LV_ALIGN_TOP_RIGHT, -MARGIN_RIGHT, CAPTION_Y0);
-  make_help(content, tr("Used to compute speed: v = distance / time."), cap);
-
-  lv_obj_add_event_cb(ta, on_ta_focus,   LV_EVENT_FOCUSED,   kb);
-  lv_obj_add_event_cb(ta, on_ta_defocus, LV_EVENT_DEFOCUSED, kb);
-  lv_obj_add_event_cb(scr, on_scr_click_hide_kb, LV_EVENT_CLICKED, kb);
-  lv_obj_add_event_cb(kb,  on_kb_ready_cv, LV_EVENT_READY, ta);
-
-  g_cv_ta_dist = ta;
-
-  lv_obj_t* save = make_btn(content, tr("Save"), on_cv_save_click);
-  lv_obj_align(save, LV_ALIGN_TOP_LEFT, MARGIN_LEFT, CAPTION_Y0 + BLOCK_SPACING);
-
-  lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 180, 0, true);
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Photogate Settings
@@ -3380,6 +3460,7 @@ static void on_pg_save_click(lv_event_t* e)
 
 void gui_show_pg_settings()
 {
+    // Stop animation timer
   g_current_screen = CurrentScreen::PGSettings;
   header_stop_and_clear();
 
@@ -3454,6 +3535,7 @@ static void on_ua_len_save_click(lv_event_t* e)
 
 void gui_show_ua_settings()
 {
+    // Stop animation timer
   g_current_screen = CurrentScreen::UASettings;
   header_stop_and_clear();
   uint16_t objLen = experiments_get_ua_len_mm();
@@ -3535,6 +3617,7 @@ static void on_ff_save_click(lv_event_t* e)
 
 void gui_show_freefall_settings()
 {
+    // Stop animation timer
   g_current_screen = CurrentScreen::FFSettings;
   header_stop_and_clear();
   uint16_t len, h; experiments_get_freefall_params(len, h);
@@ -3664,6 +3747,7 @@ static void on_in_save_click(lv_event_t* e)
 // [2026-01-18 21:28 CET] UPDATED: gui_show_incline_settings — show integer angle, keep API float
 void gui_show_incline_settings()
 {
+      // Stop animation timer
     g_current_screen = CurrentScreen::INSettings;
     header_stop_and_clear();
 
@@ -3792,6 +3876,7 @@ static void on_ta_save_click(lv_event_t* e)
 
 void gui_show_tacho_settings()
 {
+    // Stop animation timer
   g_current_screen = CurrentScreen::TASettings;
   header_stop_and_clear();
   uint16_t slots = experiments_get_tacho_slots();
@@ -3846,6 +3931,7 @@ static void on_dt_save_click(lv_event_t* e);
 
 void gui_show_datetime_settings()
 {
+      // Stop animation timer
     g_current_screen = CurrentScreen::DTSettings;
     header_stop_and_clear();
 

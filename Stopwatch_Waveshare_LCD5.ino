@@ -1,7 +1,7 @@
 /*****
  * Chronos – Main Application (.ino)
  * Integrated SD Export + Web UI + CH422G Pushbutton Gates
- * [Updated: 2026-02-07] Production build with working CH422G input reading
+ * [Updated: 2026-02-07] Production build with working CH422G input reading + button animation
  *****/
 
 #include <Arduino.h>
@@ -166,7 +166,7 @@ void setup() {
   Serial.println("=== CHRONOS READY ===\n");
 }
 
-// [2026-02-07] Main loop with CH422G input polling
+// [2026-02-07] Main loop with CH422G input polling + ISR-safe button animation
 void loop() {
   // Keep the web server responsive
   chronos::apweb_loop();
@@ -181,8 +181,12 @@ void loop() {
   // Dispatch all queued events to app controller
   gBus.dispatch();
 
-    // Check if real gate events completed an experiment
-  gui_poll_real_gate_experiments();  
+  // Check if real gate events completed an experiment
+  gui_poll_real_gate_experiments();
+  
+  // Update simulation button colors based on gate state (ISR-safe, runs in main loop)
+  // This reads gate_is_blocked() flags and updates LVGL widgets safely
+  // gui_update_sim_button_colors();
 
   // ---- Screensaver wake handling (deferred to avoid I²C contention) ----
   if (gScreenSaverActive && gWakeFromSaverPending && !gWakeInProgress) {
@@ -220,5 +224,5 @@ void loop() {
   // ---- LVGL task handler (must be called regularly) --------------------
   lv_timer_handler();
   
-  delay(2);
+  delay(5);
 }
