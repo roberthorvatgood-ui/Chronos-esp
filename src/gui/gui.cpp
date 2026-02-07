@@ -78,6 +78,11 @@ extern bool gScreenSaverActive;
 extern volatile bool gWakeFromSaverPending;  // NEW: deferred wake flag
 extern void experiments_emit_csv(Print& out);
 
+// Flag to trigger history update from LVGL timer (safe context)
+static bool g_history_update_pending = false;
+static const char* g_pending_history_mode = nullptr;
+static lv_timer_t* g_history_update_timer = nullptr;
+
 // ── Embedded splash asset (welcome_screen.c/.h) ──
 // Try common relative paths; error out if not found.
 #ifdef __has_include
@@ -660,6 +665,215 @@ static CurrentScreen g_current_screen = CurrentScreen::None;
 
 // Forward declarations (used for uniform history clearing)
 static void clear_history_for_current_screen();
+static void update_history(const char* mode); 
+// Forward declarations for history update system
+static void history_update_timer_cb(lv_timer_t* timer);
+static void request_history_update(const char* mode);
+
+
+
+// Timer callback to safely update history from LVGL context
+static void history_update_timer_cb(lv_timer_t* timer) {
+  (void)timer;
+  
+  if (g_history_update_pending && g_pending_history_mode) {
+    update_history(g_pending_history_mode);
+    g_history_update_pending = false;
+    g_pending_history_mode = nullptr;
+    
+    // One-shot timer, delete it
+    if (g_history_update_timer) {
+      lv_timer_del(g_history_update_timer);
+      g_history_update_timer = nullptr;
+    }
+  }
+}
+
+// Helper to request history update from non-LVGL context
+static void request_history_update(const char* mode) {
+  if (!g_history_update_pending) {
+    g_history_update_pending = true;
+    g_pending_history_mode = mode;
+    
+    // Create one-shot timer to run on next LVGL cycle
+    if (!g_history_update_timer) {
+      g_history_update_timer = lv_timer_create(history_update_timer_cb, 10, nullptr);
+      lv_timer_set_repeat_count(g_history_update_timer, 1);
+    }
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// [2026-02-07] Poll for experiment completion from real optical gates
+// ══════════════════════════════════════════════════════════════════════════════
+// Called from main loop when simulation is OFF and experiment is armed.
+// Checks if gate events have completed a valid measurement and updates GUI.
+
+void gui_poll_real_gate_experiments() {
+  unsigned long now = millis();
+  
+  // Only poll when armed AND simulation is disabled
+  if (!g_armed || g_sim_enabled) {
+    return;
+  }
+  
+  static unsigned long last_poll_ms = 0;
+  
+  // Poll every 100ms
+  if (now - last_poll_ms < 100) return;
+  last_poll_ms = now;
+  
+  // Track last successful measurement to avoid duplicates
+  static unsigned long last_success_ms = 0;
+  
+  bool success = false;
+  
+  // Check which experiment screen is active and try to record
+  switch (g_current_screen) {
+    case CurrentScreen::CV: {
+      double speed, time_ms;
+      std::string formula;
+      if (experiments_record_cv(speed, time_ms, formula)) {
+        if (now - last_success_ms > 500) {
+          char vbuf[48]; 
+          snprintf(vbuf, sizeof(vbuf), "%.3f m/s", speed);
+          if (g_val_label) {
+            lv_label_set_text(g_val_label, vbuf);
+          }
+          if (g_formula_label) {
+            lv_label_set_text(g_formula_label, formula.c_str());
+          }
+          // SAFE: Request history update via LVGL timer
+          request_history_update("CV");
+          Serial.printf("[GUI] CV: %.3f m/s\n", speed);
+          last_success_ms = now;
+        }
+        success = true;
+      }
+      break;
+    }
+    
+    case CurrentScreen::Photogate: {
+      double speed, time_ms;
+      std::string formula;
+      if (experiments_record_photogate(speed, time_ms, formula)) {
+        if (now - last_success_ms > 500) {
+          char vbuf[48]; 
+          snprintf(vbuf, sizeof(vbuf), "%.3f m/s", speed);
+          if (g_val_label) {
+            lv_label_set_text(g_val_label, vbuf);
+          }
+          if (g_formula_label) {
+            lv_label_set_text(g_formula_label, formula.c_str());
+          }
+          request_history_update("Photogate");
+          Serial.printf("[GUI] Photogate: %.3f m/s\n", speed);
+          last_success_ms = now;
+        }
+        success = true;
+      }
+      break;
+    }
+    
+    case CurrentScreen::UA: {
+      double a, vmid, tms, v1, v2;
+      std::string formula;
+      if (experiments_record_ua(a, vmid, tms, formula, &v1, &v2)) {
+        if (now - last_success_ms > 500) {
+          char vbuf[48]; 
+          snprintf(vbuf, sizeof(vbuf), "a=%.3f m/s²", a);
+          if (g_val_label) {
+            lv_label_set_text(g_val_label, vbuf);
+          }
+          if (g_formula_label) {
+            lv_label_set_text(g_formula_label, formula.c_str());
+          }
+          request_history_update("UA");
+          Serial.printf("[GUI] UA: a=%.3f m/s²\n", a);
+          last_success_ms = now;
+        }
+        success = true;
+      }
+      break;
+    }
+    
+    case CurrentScreen::FreeFall: {
+      double v_mps, g_mps2, tau_ms;
+      std::string formula;
+      if (experiments_record_freefall(v_mps, g_mps2, tau_ms, formula)) {
+        if (now - last_success_ms > 500) {
+          char vbuf[48]; 
+          snprintf(vbuf, sizeof(vbuf), "g=%.3f m/s²", g_mps2);
+          if (g_val_label) {
+            lv_label_set_text(g_val_label, vbuf);
+          }
+          if (g_formula_label) {
+            lv_label_set_text(g_formula_label, formula.c_str());
+          }
+          request_history_update("FreeFall");
+          Serial.printf("[GUI] FreeFall: g=%.3f m/s²\n", g_mps2);
+          last_success_ms = now;
+        }
+        success = true;
+      }
+      break;
+    }
+    
+    case CurrentScreen::Incline: {
+      double a_mps2, v1_mps, v2_mps, total_ms;
+      std::string formula;
+      if (experiments_record_incline(a_mps2, v1_mps, v2_mps, total_ms, formula)) {
+        if (now - last_success_ms > 500) {
+          char vbuf[48]; 
+          snprintf(vbuf, sizeof(vbuf), "a=%.3f m/s²", a_mps2);
+          if (g_val_label) {
+            lv_label_set_text(g_val_label, vbuf);
+          }
+          if (g_formula_label) {
+            lv_label_set_text(g_formula_label, formula.c_str());
+          }
+          request_history_update("Incline");
+          Serial.printf("[GUI] Incline: a=%.3f m/s²\n", a_mps2);
+          last_success_ms = now;
+        }
+        success = true;
+      }
+      break;
+    }
+    
+    case CurrentScreen::Tachometer: {
+      double rpm, period_ms;
+      std::string formula;
+      if (experiments_record_tacho(rpm, period_ms, formula)) {
+        if (now - last_success_ms > 500) {
+          char vbuf[48]; 
+          snprintf(vbuf, sizeof(vbuf), "%.1f RPM", rpm);
+          if (g_val_label) {
+            lv_label_set_text(g_val_label, vbuf);
+          }
+          if (g_formula_label) {
+            lv_label_set_text(g_formula_label, formula.c_str());
+          }
+          request_history_update("Tacho");
+          Serial.printf("[GUI] Tacho: %.1f RPM\n", rpm);
+          last_success_ms = now;
+        }
+        success = true;
+      }
+      break;
+    }
+    
+    default:
+      break;
+  }
+  
+  if (success) {
+    // Clear timestamps to prevent re-recording
+    experiments_clear_timestamps();
+  }
+}
+
 
 // ── Helpers (history for other experiments) ───────────────────────────────────
 static const char* sup2_to_plain(const std::string& s)

@@ -41,3 +41,6 @@ void gui_set_extra(const char* text);
 // NEW: global activity + armed status for screensaver logic
 void gui_note_user_activity();   // mark activity + wake screen if needed
 bool gui_is_armed();             // true when any experiment screen is armed
+
+// Poll for experiment completion from real optical gates (when simulation OFF)
+void gui_poll_real_gate_experiments();

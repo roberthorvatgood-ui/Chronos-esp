@@ -181,6 +181,9 @@ void loop() {
   // Dispatch all queued events to app controller
   gBus.dispatch();
 
+    // Check if real gate events completed an experiment
+  gui_poll_real_gate_experiments();  
+
   // ---- Screensaver wake handling (deferred to avoid I²C contention) ----
   if (gScreenSaverActive && gWakeFromSaverPending && !gWakeInProgress) {
     gWakeInProgress = true;
