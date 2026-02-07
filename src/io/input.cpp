@@ -1,28 +1,49 @@
-#include <Arduino.h>
+/*****
+ * input.cpp
+ * Handles photogate inputs (CH422G expander) and optional pushbutton-to-gate mapping.
+ * I2C expander reads are executed via the central hal_i2c_executor to avoid blocking core1/ISRs.
+ *
+ * FIX (2026-02-07): Ensure CH422G is in input mode and use correct read sequence
+ *****/
 
-#include "input.h"
-#include "../core/config.h"
-#include "../core/gate_engine.h"
-#include "../drivers/hal_panel.h"   // hal::expander_get_handle(), esp_io_expander_get_level
-#include "../drivers/hal_i2c_executor.h" // executor API
-#include "../drivers/hal_i2c_manager.h"  // fallback mutex (kept for compatibility)
+#include <Arduino.h>
 #include "esp_err.h"
+
+#include "../drivers/hal_panel.h"       // hal::expander_get_handle()
+#include "../drivers/hal_i2c_executor.h"// hal_i2c_exec_sync
+#include "../drivers/hal_i2c_manager.h" // fallback mutex
+#include "../core/gate_engine.h"
+#include "input.h"
+
+// Include the correct header
+#if __has_include(<port/esp_io_expander.h>)
+  #include <port/esp_io_expander.h>
+#elif __has_include(<esp_io_expander.h>)
+  #include <esp_io_expander.h>
+#endif
+
+// CH422G-specific function to set all pins as inputs (from your diagnostic code)
+extern "C" {
+  esp_err_t esp_io_expander_ch422g_set_all_input(esp_io_expander_handle_t handle);
+}
 
 // Debounced logical levels: true = HIGH (beam OPEN), false = LOW (beam BLOCKED)
 static bool gGateALevel = true;
 static bool gGateBLevel = true;
 
-// Debounce state
+// Debounce state for gates
 static uint8_t sA_count = 0, sB_count = 0;
 static bool    sA_last  = true;
 static bool    sB_last  = true;
-static constexpr uint8_t STABLE_COUNT = 3;
 
-// Throttling: do not hit I2C every loop iteration
+// Adjust these for testing
+static constexpr uint8_t STABLE_COUNT = 2;      // Require 2 stable samples (40ms total)
+static const unsigned long POLL_PERIOD_MS = 20; // Poll every 20ms (50Hz, safe for I²C)
+
+// Throttling
 static unsigned long sLastPollMs = 0;
-static const unsigned long POLL_PERIOD_MS = 10;   // 10 ms; increase if needed
 
-// Gate indices/masks (IO0 and IO1/bit5)
+// Gate indices/masks
 #ifndef GATE_A_DI_INDEX
 #define GATE_A_DI_INDEX   0
 #endif
@@ -40,25 +61,26 @@ bool input_edge_falling(int prev, int curr) { return prev == HIGH && curr == LOW
 bool input_edge_rising (int prev, int curr) { return prev == LOW  && curr == HIGH; }
 static inline int lvl_to_digital(bool v)    { return v ? HIGH : LOW; }
 
-// Executor request context for expander read
+// ----------------- Executor-backed expander read ---------------------------
+
 struct expander_read_ctx {
   esp_io_expander_handle_t h;
   uint32_t mask;
-  uint32_t out_levels;
+  uint32_t out;
 };
 
-// Function that is executed in executor context to read expander inputs
+// Read the CH422G input pins using get_level (which reads inputs when pins are configured as INPUT)
 static esp_err_t expander_read_op(void* vctx) {
   if (!vctx) return ESP_ERR_INVALID_ARG;
   expander_read_ctx* ctx = static_cast<expander_read_ctx*>(vctx);
   if (!ctx->h) return ESP_ERR_INVALID_ARG;
+  
   uint32_t val = 0;
   esp_err_t r = esp_io_expander_get_level(ctx->h, ctx->mask, &val);
-  if (r == ESP_OK) ctx->out_levels = val;
+  if (r == ESP_OK) ctx->out = val;
   return r;
 }
 
-// Read CH422G input bits via executor (safe from any task). Returns 0xFF on error.
 static uint8_t read_inputs_raw()
 {
     esp_io_expander_handle_t h = hal::expander_get_handle();
@@ -69,29 +91,113 @@ static uint8_t read_inputs_raw()
 
     expander_read_ctx ctx;
     ctx.h = h;
-    ctx.mask = 0xFF;
-    ctx.out_levels = 0;
+    ctx.mask = 0xFF; // Read all 8 pins
+    ctx.out = 0xFF;  // Default to all high
 
-    // synchronous request: runs on core 0
-    esp_err_t err = hal_i2c_exec_sync(expander_read_op, &ctx, 120);
+    // Use executor (runs on core0). Longer timeout for safety.
+    esp_err_t err = hal_i2c_exec_sync(expander_read_op, &ctx, 300);
     if (err != ESP_OK) {
-      // fallback: try a quick mutex read (rare)
-      if (hal::i2c_lock(40)) {
-        uint32_t val = 0;
-        esp_err_t r = esp_io_expander_get_level(h, 0xFF, &val);
+      // Fallback: direct read with mutex
+      if (hal::i2c_lock(50)) {
+        uint32_t v = 0;
+        esp_err_t r = esp_io_expander_get_level(h, 0xFF, &v);
         hal::i2c_unlock();
-        if (r == ESP_OK) return static_cast<uint8_t>(val & 0xFF);
+        if (r == ESP_OK) {
+          return static_cast<uint8_t>(v & 0xFF);
+        }
       }
       return 0xFF;
     }
-
-    return static_cast<uint8_t>(ctx.out_levels & 0xFF);
+    return static_cast<uint8_t>(ctx.out & 0xFF);
 }
 
-// Init: seed state and reset gate engine, no I2C setup here
+// ----------------- Pushbutton-to-gate mapping ------------------------------
+static int s_btn_gateA_exio = -1;
+static int s_btn_gateB_exio = -1;
+static bool s_btn_active_low = true;
+
+// Debounce state for pushbuttons
+static uint8_t sBtnA_count = STABLE_COUNT, sBtnB_count = STABLE_COUNT;
+static bool    sBtnA_last  = true, sBtnB_last = true;
+
+// Flag to track if we've set CH422G to input mode
+static bool s_ch422g_input_mode_set = false;
+
+void input_configure_pushbuttons(int gateA_exio, int gateB_exio, bool active_low)
+{
+  s_btn_gateA_exio = gateA_exio;
+  s_btn_gateB_exio = gateB_exio;
+  s_btn_active_low = active_low;
+
+  Serial.printf("[Input] Configured pushbuttons: A=IO%d, B=IO%d, active_low=%d\n",
+                gateA_exio, gateB_exio, active_low);
+
+  // Seed last states
+  uint8_t snap = read_inputs_raw();
+  if (s_btn_gateA_exio >= 0) {
+    sBtnA_last = (snap & (1u << s_btn_gateA_exio)) != 0;
+    sBtnA_count = STABLE_COUNT;
+  }
+  if (s_btn_gateB_exio >= 0) {
+    sBtnB_last = (snap & (1u << s_btn_gateB_exio)) != 0;
+    sBtnB_count = STABLE_COUNT;
+  }
+  
+  Serial.printf("[Input] Initial snapshot: 0x%02X (btnA_last=%d, btnB_last=%d)\n",
+                snap, sBtnA_last, sBtnB_last);
+}
+
+// ----------------- CH422G input mode setup ---------------------------------
+
+// Executor operation to set CH422G to all-input mode
+struct ch422g_set_input_ctx {
+  esp_io_expander_handle_t h;
+};
+
+static esp_err_t ch422g_set_all_input_op(void* vctx) {
+  if (!vctx) return ESP_ERR_INVALID_ARG;
+  ch422g_set_input_ctx* ctx = static_cast<ch422g_set_input_ctx*>(vctx);
+  if (!ctx->h) return ESP_ERR_INVALID_ARG;
+  
+  return esp_io_expander_ch422g_set_all_input(ctx->h);
+}
+
+static bool ensure_ch422g_input_mode() {
+  if (s_ch422g_input_mode_set) return true;
+  
+  esp_io_expander_handle_t h = hal::expander_get_handle();
+  if (!h) return false;
+  
+  ch422g_set_input_ctx ctx;
+  ctx.h = h;
+  
+  esp_err_t err = hal_i2c_exec_sync(ch422g_set_all_input_op, &ctx, 300);
+  if (err == ESP_OK) {
+    s_ch422g_input_mode_set = true;
+    Serial.println("[Input] CH422G set to all-input mode");
+    return true;
+  } else {
+    Serial.printf("[Input] Failed to set CH422G input mode: 0x%x\n", err);
+    return false;
+  }
+}
+
+// ----------------- Existing API functions ----------------------------------
+
 void input_init()
 {
+    Serial.println("[Input] Initializing...");
+    
+    // CRITICAL: Ensure CH422G is in input mode before first read
+    if (!ensure_ch422g_input_mode()) {
+      Serial.println("[Input] WARNING: Failed to set CH422G input mode!");
+    }
+    
+    // Small delay after mode change
+    delay(10);
+    
     uint8_t snap = read_inputs_raw();
+    Serial.printf("[Input] Initial raw snapshot: 0x%02X\n", snap);
 
     gGateALevel  = (snap & GATE_A_MASK) != 0;
     gGateBLevel  = (snap & GATE_B_MASK) != 0;
@@ -101,10 +207,20 @@ void input_init()
     sA_count = STABLE_COUNT;
     sB_count = STABLE_COUNT;
 
+    if (s_btn_gateA_exio >= 0) {
+      sBtnA_last = (snap & (1u << s_btn_gateA_exio)) != 0;
+      sBtnA_count = STABLE_COUNT;
+    }
+    if (s_btn_gateB_exio >= 0) {
+      sBtnB_last = (snap & (1u << s_btn_gateB_exio)) != 0;
+      sBtnB_count = STABLE_COUNT;
+    }
+
     gate_engine_init();
+    Serial.printf("[Input] Init complete. GateA=%d, GateB=%d\n", 
+                  gGateALevel, gGateBLevel);
 }
 
-// Legacy read helper
 void input_read(Buttons& btns, int& currentA, int& currentB)
 {
     currentA        = lvl_to_digital(gGateALevel);
@@ -118,7 +234,6 @@ void input_poll_and_publish(Buttons& btns)
 {
     unsigned long now = millis();
     if (now - sLastPollMs < POLL_PERIOD_MS) {
-        // Too soon; just update Buttons with current debounced state
         btns.prevSelect = lvl_to_digital(gGateALevel);
         btns.prevDown   = lvl_to_digital(gGateBLevel);
         return;
@@ -127,8 +242,55 @@ void input_poll_and_publish(Buttons& btns)
 
     uint8_t snap = read_inputs_raw();
 
-    bool sampleA = (snap & GATE_A_MASK) != 0;
-    bool sampleB = (snap & GATE_B_MASK) != 0;
+    // Debug: only log when snapshot changes to reduce serial spam
+    static uint8_t last_logged_snap = 0xFF;
+    static bool first_log = true;
+    if (snap != last_logged_snap || first_log) {
+        Serial.printf("[DBG] snap=0x%02X btnA_last=%d cntA=%u btnB_last=%d cntB=%u gA=%d gB=%d\n",
+                      snap,
+                      sBtnA_last, sBtnA_count,
+                      sBtnB_last, sBtnB_count,
+                      gGateALevel, gGateBLevel);
+        last_logged_snap = snap;
+        first_log = false;
+    }
+
+    // Determine raw samples for gates
+    bool sampleA_raw = (snap & GATE_A_MASK) != 0;
+    bool sampleB_raw = (snap & GATE_B_MASK) != 0;
+
+    // If pushbutton mapped for gate A
+    if (s_btn_gateA_exio >= 0) {
+      bool btn_sample = (snap & (1u << s_btn_gateA_exio)) != 0;
+      if (btn_sample == sBtnA_last) {
+        if (sBtnA_count < 255) sBtnA_count++;
+      } else {
+        sBtnA_count = 1;
+        sBtnA_last = btn_sample;
+      }
+      if (sBtnA_count >= STABLE_COUNT) {
+        bool pressed = s_btn_active_low ? !sBtnA_last : sBtnA_last;
+        sampleA_raw = !pressed; // pressed -> BLOCKED (false), released -> OPEN (true)
+      }
+    }
+
+    // If pushbutton mapped for gate B
+    if (s_btn_gateB_exio >= 0) {
+      bool btn_sample = (snap & (1u << s_btn_gateB_exio)) != 0;
+      if (btn_sample == sBtnB_last) {
+        if (sBtnB_count < 255) sBtnB_count++;
+      } else {
+        sBtnB_count = 1;
+        sBtnB_last = btn_sample;
+      }
+      if (sBtnB_count >= STABLE_COUNT) {
+        bool pressed = s_btn_active_low ? !sBtnB_last : sBtnB_last;
+        sampleB_raw = !pressed;
+      }
+    }
+
+    bool sampleA = sampleA_raw;
+    bool sampleB = sampleB_raw;
 
     // ----- Debounce Gate A -----
     if (sampleA == sA_last) {
@@ -147,12 +309,12 @@ void input_poll_and_publish(Buttons& btns)
             int curr_d = lvl_to_digital(sampleA);
 
             if (input_edge_falling(prev_d, curr_d)) {
-                // Beam went from OPEN (HIGH) to BLOCKED (LOW): front edge
-                gate_trigger(GATE_A);        // single timestamp for CV/PG/FF/Tacho
-                gate_block_start(GATE_A);    // front edge for UA/Incline
+                gate_trigger(GATE_A);
+                gate_block_start(GATE_A);
+                Serial.printf("[GATE DBG] Gate A FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             } else if (input_edge_rising(prev_d, curr_d)) {
-                // Beam went from BLOCKED (LOW) to OPEN (HIGH): rear edge
                 gate_block_end(GATE_A);
+                Serial.printf("[GATE DBG] Gate A RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             }
         }
     }
@@ -176,13 +338,20 @@ void input_poll_and_publish(Buttons& btns)
             if (input_edge_falling(prev_d, curr_d)) {
                 gate_trigger(GATE_B);
                 gate_block_start(GATE_B);
+                Serial.printf("[GATE DBG] Gate B FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             } else if (input_edge_rising(prev_d, curr_d)) {
                 gate_block_end(GATE_B);
+                Serial.printf("[GATE DBG] Gate B RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             }
         }
     }
 
-    // Keep Buttons struct updated
     btns.prevSelect = lvl_to_digital(gGateALevel);
     btns.prevDown   = lvl_to_digital(gGateBLevel);
+}
+
+// Stub for optional callback (if header declares it)
+static input_button_cb_t s_button_cb = nullptr;
+void input_set_button_callback(input_button_cb_t cb) {
+    s_button_cb = cb;
 }
