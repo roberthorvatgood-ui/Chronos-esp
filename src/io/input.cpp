@@ -89,26 +89,54 @@ static uint8_t read_inputs_raw()
         return 0xFF;
     }
 
+    // Strategy: Temporarily enable all-input mode, read, then restore outputs
+    // This is necessary because CH422G doesn't support reliable mixed-mode I/O
+    
+    // Step 1: Enable all-input mode for reading
+    esp_err_t err = esp_io_expander_ch422g_set_all_input(h);
+    if (err != ESP_OK) {
+        Serial.printf("[Input] Failed to enable input mode for read: 0x%x\n", err);
+        return 0xFF;
+    }
+    
+    // Step 2: Read the input pins
     expander_read_ctx ctx;
     ctx.h = h;
     ctx.mask = 0xFF; // Read all 8 pins
     ctx.out = 0xFF;  // Default to all high
 
-    // Use executor (runs on core0). Longer timeout for safety.
-    esp_err_t err = hal_i2c_exec_sync(expander_read_op, &ctx, 300);
-    if (err != ESP_OK) {
-      // Fallback: direct read with mutex
-      if (hal::i2c_lock(50)) {
-        uint32_t v = 0;
-        esp_err_t r = esp_io_expander_get_level(h, 0xFF, &v);
-        hal::i2c_unlock();
-        if (r == ESP_OK) {
-          return static_cast<uint8_t>(v & 0xFF);
+    err = hal_i2c_exec_sync(expander_read_op, &ctx, 300);
+    uint8_t snapshot = 0xFF;
+    
+    if (err == ESP_OK) {
+        snapshot = static_cast<uint8_t>(ctx.out & 0xFF);
+    } else {
+        // Fallback: direct read with mutex
+        if (hal::i2c_lock(50)) {
+            uint32_t v = 0;
+            esp_err_t r = esp_io_expander_get_level(h, 0xFF, &v);
+            hal::i2c_unlock();
+            if (r == ESP_OK) {
+                snapshot = static_cast<uint8_t>(v & 0xFF);
+            }
         }
-      }
-      return 0xFF;
     }
-    return static_cast<uint8_t>(ctx.out & 0xFF);
+    
+    // Step 3: IMMEDIATELY restore output pins (critical for SD and LCD)
+    const uint32_t output_pins = (1u << 2) | (1u << 4);  // IO2=LCD_BL, IO4=SD_CS
+    
+    err = esp_io_expander_set_dir(h, output_pins, IO_EXPANDER_OUTPUT);
+    if (err != ESP_OK) {
+        Serial.printf("[Input] Warning: Failed to restore outputs: 0x%x\n", err);
+    }
+    
+    // Step 4: Set SD_CS high (deselect SD card)
+    err = esp_io_expander_set_level(h, (1u << 4), 1);
+    if (err != ESP_OK) {
+        Serial.printf("[Input] Warning: Failed to set SD_CS: 0x%x\n", err);
+    }
+    
+    return snapshot;
 }
 
 // ----------------- Pushbutton-to-gate mapping ------------------------------
@@ -154,32 +182,16 @@ struct ch422g_set_input_ctx {
   esp_io_expander_handle_t h;
 };
 
-static esp_err_t ch422g_set_all_input_op(void* vctx) {
-  if (!vctx) return ESP_ERR_INVALID_ARG;
-  ch422g_set_input_ctx* ctx = static_cast<ch422g_set_input_ctx*>(vctx);
-  if (!ctx->h) return ESP_ERR_INVALID_ARG;
-  
-  return esp_io_expander_ch422g_set_all_input(ctx->h);
-}
-
 static bool ensure_ch422g_input_mode() {
   if (s_ch422g_input_mode_set) return true;
   
   esp_io_expander_handle_t h = hal::expander_get_handle();
   if (!h) return false;
   
-  ch422g_set_input_ctx ctx;
-  ctx.h = h;
-  
-  esp_err_t err = hal_i2c_exec_sync(ch422g_set_all_input_op, &ctx, 300);
-  if (err == ESP_OK) {
-    s_ch422g_input_mode_set = true;
-    Serial.println("[Input] CH422G set to all-input mode");
-    return true;
-  } else {
-    Serial.printf("[Input] Failed to set CH422G input mode: 0x%x\n", err);
-    return false;
-  }
+  // We'll handle input mode switching on each read, so just mark as initialized
+  s_ch422g_input_mode_set = true;
+  Serial.println("[Input] CH422G initialized for dynamic input/output switching");
+  return true;
 }
 
 // ----------------- Existing API functions ----------------------------------
