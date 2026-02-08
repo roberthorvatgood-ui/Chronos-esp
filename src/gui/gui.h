@@ -54,3 +54,6 @@ void gui_update_sim_button_colors();
 // Simulation button animation control
 void gui_start_sim_button_animation();
 void gui_stop_sim_button_animation();
+
+// Screen transition guard (blocks I²C polling during LVGL screen loads)
+extern volatile bool g_screen_transition_active;

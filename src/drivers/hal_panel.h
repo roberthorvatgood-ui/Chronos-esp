@@ -63,6 +63,7 @@ bool expander_wait_ready(uint32_t timeout_ms = 800);
 bool expander_pinMode(uint8_t exio, bool output);
 /** Set an EXIO pin level: high=true, low=false. */
 bool expander_digitalWrite(uint8_t exio, bool high);
+bool expander_digitalRead(uint8_t pin, uint8_t* out_level);
 /** Attach an existing expander handle (manual override). */
 void expander_attach(esp_io_expander_handle_t h);
 /** Return the raw IO expander handle (nullable; advanced uses). */

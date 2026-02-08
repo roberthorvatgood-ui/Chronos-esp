@@ -89,6 +89,8 @@ static bool g_history_update_pending = false;
 static const char* g_pending_history_mode = nullptr;
 static lv_timer_t* g_history_update_timer = nullptr;
 
+// Screen transition protection
+volatile bool g_screen_transition_active = false;
 
 // Clear simulation button pointers (call when leaving experiment screens)
 static void clear_sim_button_refs() {
@@ -126,6 +128,8 @@ static void on_ta_focus(lv_event_t* e);
 static void on_ta_defocus(lv_event_t* e);
 static void on_scr_click_hide_kb(lv_event_t* e);
 static void on_ta_value_changed(lv_event_t* e); // NEW
+static void on_back(lv_event_t* e);
+static void on_settings(lv_event_t* e);
 
 // Stopwatch
 static void sw_clear_history();
@@ -185,7 +189,27 @@ static void ap_export_stop(void)
     }
 }
 
-
+// Safe screen transition wrapper
+static void safe_transition(void (*show_screen_fn)()) {
+  // 1. Set transition flag to block I²C polling
+  g_screen_transition_active = true;
+  
+  // 2. Disarm experiment
+  g_armed = false;
+  experiment_set_state(ExperimentState::IDLE);
+  
+  // 3. Give I²C subsystems time to finish current operation
+  delay(50);
+  
+  // 4. Show new screen
+  show_screen_fn();
+  
+  // 5. Small delay for LVGL to settle
+  delay(50);
+  
+  // 6. Clear transition flag
+  g_screen_transition_active = false;
+}
 
 // [2026-01-26 21:22 CET] NEW: AP modal close handler (CLOSE AP button)
 
@@ -467,6 +491,14 @@ static void cv_arm_toggle_cb(lv_event_t* e)
 {
     (void)e;
     g_armed = !g_armed;
+    
+    // NEW: Set experiment state
+    if (g_armed) {
+      experiment_set_state(ExperimentState::ARMED);
+    } else {
+      experiment_set_state(ExperimentState::IDLE);
+    }
+
     set_arm_button_visual(cv_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
     experiments_clear_timestamps();   // clear timing markers; keep last result on screen
 }
@@ -926,6 +958,39 @@ void gui_poll_real_gate_experiments() {
   }
 }
 
+static void on_back(lv_event_t* e) { 
+  (void)e;
+  
+  Serial.println("[on_back] Starting safe transition");
+  g_screen_transition_active = true;
+  g_armed = false;
+  experiment_set_state(ExperimentState::IDLE);
+  clear_history_for_current_screen();
+  delay(50);
+  
+  gui_show_main_menu();
+  
+  delay(50);
+  g_screen_transition_active = false;
+  Serial.println("[on_back] Transition complete");
+}
+
+static void on_settings(lv_event_t* e) { 
+  (void)e;
+  
+  Serial.println("[on_settings] Starting safe transition");
+  g_screen_transition_active = true;
+  g_armed = false;
+  experiment_set_state(ExperimentState::IDLE);
+  clear_history_for_current_screen();
+  delay(50);
+  
+  gui_show_settings();
+  
+  delay(50);
+  g_screen_transition_active = false;
+  Serial.println("[on_settings] Transition complete");
+}
 
 // ── Helpers (history for other experiments) ───────────────────────────────────
 static const char* sup2_to_plain(const std::string& s)
@@ -1074,24 +1139,6 @@ static void clear_history_for_current_screen()
             break; // screens with no history
     }
 }
-
-
-static void on_back(lv_event_t* e) { (void)e;
-  // Uniform policy: clear history when leaving any screen
-  clear_history_for_current_screen();
-  // Go back to Main Menu
-  gui_show_main_menu();
-}
-
-static void on_settings(lv_event_t* e) { (void)e;
-  // Uniform policy: clear history before switching to Settings
-  clear_history_for_current_screen();
-  gui_show_settings();
-}
-
-
-
-
 
 // Helper: make a borderless, transparent group container (flex row)
 static lv_obj_t* make_borderless_row(lv_obj_t* parent)
@@ -2025,6 +2072,14 @@ static lv_obj_t* pg_btn_arm = nullptr;
 static void pg_arm_toggle_cb(lv_event_t*)
 {
   g_armed = !g_armed;
+
+  // NEW: Set experiment state
+  if (g_armed) {
+    experiment_set_state(ExperimentState::ARMED);
+  } else {
+    experiment_set_state(ExperimentState::IDLE);
+  }
+
   set_arm_button_visual(pg_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
   experiments_clear_timestamps();
 }
@@ -2197,6 +2252,14 @@ static void ua_arm_toggle_cb(lv_event_t* e)
     (void)e;
     // Toggle armed state and update button visuals
     g_armed = !g_armed;
+
+    // NEW: Set experiment state
+    if (g_armed) {
+      experiment_set_state(ExperimentState::ARMED);
+    } else {
+      experiment_set_state(ExperimentState::IDLE);
+    }
+
     set_arm_button_visual(ua_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
 
     // Clear timing state only (like CV/PG/FF/Incline/Tacho), but do NOT clear UI labels here
@@ -2351,6 +2414,14 @@ static lv_obj_t* ff_btn_arm = nullptr;
 static void ff_arm_toggle_cb(lv_event_t*)
 {
   g_armed = !g_armed;
+
+  // NEW: Set experiment state
+  if (g_armed) {
+    experiment_set_state(ExperimentState::ARMED);
+  } else {
+    experiment_set_state(ExperimentState::IDLE);
+  }
+
   set_arm_button_visual(ff_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
   experiments_clear_timestamps();
 }
@@ -2511,6 +2582,14 @@ static lv_obj_t* in_btn_arm = nullptr;
 static void in_arm_toggle_cb(lv_event_t*)
 {
   g_armed = !g_armed;
+
+  // NEW: Set experiment state
+  if (g_armed) {
+    experiment_set_state(ExperimentState::ARMED);
+  } else {
+    experiment_set_state(ExperimentState::IDLE);
+  }
+
   set_arm_button_visual(in_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
   experiments_clear_timestamps();
 }
@@ -2662,6 +2741,14 @@ static lv_obj_t* ta_btn_arm = nullptr;
 static void ta_arm_toggle_cb(lv_event_t*)
 {
   g_armed = !g_armed;
+
+  // NEW: Set experiment state
+  if (g_armed) {
+    experiment_set_state(ExperimentState::ARMED);
+  } else {
+    experiment_set_state(ExperimentState::IDLE);
+  }
+
   set_arm_button_visual(ta_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
   experiments_clear_timestamps();
 }
@@ -2806,8 +2893,20 @@ void gui_show_tacho()
 enum class MenuTarget : uint8_t { Stopwatch=0, CV, Photogate, UA, FreeFall, Incline, Tachometer };
 static void menu_nav_cb(lv_event_t* e)
 {
-  // Uniform policy: clear current screen history before switching
+  // 1. Start transition (blocks gate polling)
+  g_screen_transition_active = true;
+  
+  // 2. Disarm experiment immediately
+  g_armed = false;
+  experiment_set_state(ExperimentState::IDLE);
+  
+  // 3. Clear history
   clear_history_for_current_screen();
+  
+  // 4. Give I²C time to settle
+  delay(50);
+  
+  // 5. Navigate
   MenuTarget tgt = (MenuTarget)(uintptr_t)lv_event_get_user_data(e);
   switch (tgt) {
     case MenuTarget::Stopwatch: gApp.startIndex = (uint8_t)AppMode::Stopwatch; break;
@@ -2818,8 +2917,16 @@ static void menu_nav_cb(lv_event_t* e)
     case MenuTarget::Incline:   gApp.startIndex = (uint8_t)AppMode::Incline;   break;
     case MenuTarget::Tachometer:gApp.startIndex = (uint8_t)AppMode::Tacho;     break;
   }
-  Serial.printf("[menu_nav_cb] startIndex=%u\n", (unsigned)gApp.startIndex);
+  
+  Serial.printf("[menu_nav_cb] startIndex=%u (transition active)\n", (unsigned)gApp.startIndex);
   gApp.enter_mode();
+  
+  // 6. Let screen settle
+  delay(50);
+  
+  // 7. End transition (re-enable gate polling if armed)
+  g_screen_transition_active = false;
+  Serial.println("[menu_nav_cb] Transition complete");
 }
 
 static lv_obj_t* make_menu_btn(lv_obj_t* parent, const char* text, MenuTarget tgt)
@@ -2870,6 +2977,11 @@ static void on_wifi_export_cb(lv_event_t* e)
 // [2026-01-18 14:20 CET] UPDATED: Main Menu now includes "WiFi Export" button
 void gui_show_main_menu()
 {
+
+    // Stop any running experiments
+    g_armed = false;
+    experiment_set_state(ExperimentState::IDLE);
+
       // Stop animation timer
     g_experiment_screen_active = false;  // Disable button animation
     g_current_screen = CurrentScreen::MainMenu;

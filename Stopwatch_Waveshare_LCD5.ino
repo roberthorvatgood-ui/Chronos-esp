@@ -244,7 +244,7 @@ void loop() {
     }
     
     // 3. Wait longer for I²C to settle
-    delay(200);
+    delay(500);
     
     // 4. Resume gate polling
     gate_input_resume();

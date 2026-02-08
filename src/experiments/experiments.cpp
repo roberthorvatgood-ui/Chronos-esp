@@ -9,6 +9,38 @@
 #include <string.h>
 #include "../intl/i18n.h" // ← added for tr()
 
+// Experiment State Management
+static ExperimentState s_experiment_state = ExperimentState::IDLE;
+
+ExperimentState experiment_get_state() {
+  return s_experiment_state;
+}
+
+void experiment_set_state(ExperimentState s) {
+  if (s_experiment_state != s) {
+    s_experiment_state = s;
+    
+    switch (s) {
+      case ExperimentState::IDLE:
+        Serial.println("[Experiment] State → IDLE (gate polling OFF)");
+        break;
+      case ExperimentState::ARMED:
+        Serial.println("[Experiment] State → ARMED (gate polling ON)");
+        break;
+      case ExperimentState::RUNNING:
+        Serial.println("[Experiment] State → RUNNING (gate polling ON)");
+        break;
+      case ExperimentState::FINISHED:
+        Serial.println("[Experiment] State → FINISHED (gate polling OFF)");
+        break;
+    }
+  }
+}
+
+bool experiment_should_poll_gates() {
+  return (s_experiment_state == ExperimentState::ARMED || 
+          s_experiment_state == ExperimentState::RUNNING);
+}
 
 // ================= Settings =================
 static uint16_t s_distance_mm = 500; // CV

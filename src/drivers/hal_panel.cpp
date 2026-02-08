@@ -198,4 +198,20 @@ esp_io_expander_handle_t expander_get_handle() {
   return s_hal_expander;
 }
 
+bool expander_digitalRead(uint8_t pin, uint8_t* out_level)
+{
+  if (!s_hal_expander || !out_level) return false;
+  
+  uint32_t level = 0;
+  esp_err_t e = esp_io_expander_get_level(s_hal_expander, (1ULL << pin), &level);
+  
+  if (e == ESP_OK) {
+    *out_level = (level & (1ULL << pin)) ? 1 : 0;
+    return true;
+  }
+  
+  Serial.printf("[HAL] digitalRead(%d) failed: 0x%x\n", pin, e);
+  return false;
+}
+
 } // namespace hal
