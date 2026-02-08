@@ -11,12 +11,10 @@
  */
 
 enum EventType : uint8_t {
-  EVT_SELECT_FALL,
-  EVT_DOWN_FALL,
-  EVT_DOWN_LONG,
-  EVT_BOTH_LONG,
-  EVT_BOTH_RELEASED,
-  EVT_WS_SNAPSHOT_TICK
+    EVT_GATE_A_RISE,
+    EVT_GATE_A_FALL,
+    EVT_GATE_B_RISE,
+    EVT_GATE_B_FALL,
 };
 
 struct Event {

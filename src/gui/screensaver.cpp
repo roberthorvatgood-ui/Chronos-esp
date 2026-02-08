@@ -1,20 +1,24 @@
+/*****
+ * screensaver.cpp — Chronos screensaver with zoomed + drifting welcome image
+ * [Updated: 2026-02-08] Added gate input pause/resume coordination
+ *****/
 
-#include <lvgl.h>
+#include <Arduino.h>
 #include "screensaver.h"
+#include "gui.h"
 #include "../drivers/hal_panel.h"
 #include "../intl/i18n.h"
-#include "src/assets/fonts/ui_font_16.h"
+#include <lvgl.h>
+#include "../assets/welcome_screen.h" 
 
-#if __has_include("../assets/welcome_screen.h")
- #include "../assets/welcome_screen.h"
-#elif __has_include("assets/welcome_screen.h")
- #include "assets/welcome_screen.h"
-#else
- #error "welcome_screen.h not found. Place it under src/assets/ and include here."
-#endif
+// Include gate input control
+extern "C" {
+  void gate_input_pause();
+  void gate_input_resume();
+}
 
 // ─────────────────────────────────────────────────────────────
-// Build-time tuning
+// Config macros (can override in platformio.ini or here)
 // ─────────────────────────────────────────────────────────────
 #ifndef SCREENSAVER_FORCE_FULL_REFRESH
 #define SCREENSAVER_FORCE_FULL_REFRESH 0
@@ -84,232 +88,195 @@ void screensaver_set_apweb_hold(bool hold)
     s_apweb_hold = hold;
 
     if (hold) {
+        // Pause gate input polling to free I²C bus for AP-web operations
+        gate_input_pause();
+        
         // Immediately hide if active so AP web can safely use SD/CH422G.
         if (s_active) {
             ss_hide_core_internal();
         }
-        Serial.println("[Screensaver] AP-web HOLD ON");
+        Serial.println("[Screensaver] AP-web HOLD ON - gate polling PAUSED");
     } else {
-        Serial.println("[Screensaver] AP-web HOLD OFF");
+        // Resume gate input polling
+        gate_input_resume();
+        Serial.println("[Screensaver] AP-web HOLD OFF - gate polling RESUMED");
     }
 }
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────────────────────
+// ──────���──────────────────────────────────────────────────────
 static void start_fullframe_refresh_timer() {
 #if SCREENSAVER_FORCE_FULL_REFRESH
-    if (!s_refr_timer) {
-        s_refr_timer = lv_timer_create(
-            [](lv_timer_t* /*t*/) {
-                if (obj_valid(s_overlay)) lv_obj_invalidate(s_overlay);
-            },
-            SCREENSAVER_REFRESH_MS,
-            nullptr
-        );
-        lv_timer_set_repeat_count(s_refr_timer, -1);
-    }
+    if (s_refr_timer) return;
+    auto timer_cb = [](lv_timer_t* t) {
+        lv_obj_invalidate(lv_scr_act());
+    };
+    s_refr_timer = lv_timer_create(timer_cb, SCREENSAVER_REFRESH_MS, nullptr);
+    if (s_refr_timer) lv_timer_set_repeat_count(s_refr_timer, -1);
 #endif
 }
 
 static void stop_fullframe_refresh_timer() {
 #if SCREENSAVER_FORCE_FULL_REFRESH
-    if (s_refr_timer) {
-        lv_timer_del(s_refr_timer);
-        s_refr_timer = nullptr;
-    }
+    if (!s_refr_timer) return;
+    lv_timer_del(s_refr_timer);
+    s_refr_timer = nullptr;
 #endif
 }
 
-static void start_drift_animations(int driftX, int driftY) {
-    // X axis
+// Animation delete helpers (guards)
+static void del_anim(lv_anim_t* a) {
+    if (a && a->var) {
+        lv_anim_del(a->var, nullptr);
+        memset(a, 0, sizeof(*a));
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Core hide implementation (no resume – used by hold gate)
+// ─────────────────────────────────────────────────────────────
+static void ss_hide_core_internal(void)
+{
+    if (!s_active) return; // not shown
+
+    // Stop animations
+    del_anim(&s_animX);
+    del_anim(&s_animY);
+    del_anim(&s_animMicro);
+
+    stop_fullframe_refresh_timer();
+
+    // Delete overlay + children
+    if (obj_valid(s_overlay)) {
+        lv_obj_del(s_overlay);
+        s_overlay    = nullptr;
+        s_img        = nullptr;
+        s_hint_label = nullptr;
+    }
+
+    s_active = false;
+    
+    // DON'T auto-resume gate polling here
+    // Caller controls when to resume (after backlight settles)
+    if (!s_apweb_hold) {
+        Serial.println("[Screensaver] Deactivated (gate polling still paused - caller will resume)");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Public show
+// ─────────────────────────────────────────────────────────────
+void screensaver_show()
+{
+    // AP-web hold gate: if hold is active, saver is disabled.
+    if (s_apweb_hold) return;
+
+    if (s_active) return; // already shown
+
+    // Pause gate input polling to reduce I²C bus contention
+    gate_input_pause();
+    Serial.println("[Screensaver] Activating - gate polling PAUSED");
+
+    // 1) Create overlay on lv_layer_top (always above normal screens)
+    s_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_pos(s_overlay, 0, 0);
+    lv_obj_clear_flag(s_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(s_overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_overlay, 0, 0);
+    lv_obj_set_style_pad_all(s_overlay, 0, 0);
+
+    // 2) Fade-in overlay from transparent
+    lv_obj_set_style_opa(s_overlay, LV_OPA_TRANSP, 0);
+    lv_anim_t fade_in;
+    lv_anim_init(&fade_in);
+    lv_anim_set_var(&fade_in, s_overlay);
+    lv_anim_set_exec_cb(&fade_in, set_obj_opa);
+    lv_anim_set_values(&fade_in, LV_OPA_TRANSP, LV_OPA_COVER);
+    lv_anim_set_time(&fade_in, 300);
+    lv_anim_set_path_cb(&fade_in, lv_anim_path_ease_in);
+    lv_anim_start(&fade_in);
+
+    // 3) Image (zoomed, centered initially)
+    // No need for LV_IMG_DECLARE, it's in welcome_screen.h
+    s_img = lv_img_create(s_overlay);
+    lv_img_set_src(s_img, &welcome_screen);  // CHANGED: chronos_welcome -> welcome_screen
+
+    lv_obj_center(s_img);
+
+    // Zoom to ~130% (LVGL zoom is scaled by 256: 256=100%)
+    lv_img_set_zoom(s_img, (uint16_t)(1.3 * 256));
+
+    // 4) Drift animation on X axis
     lv_anim_init(&s_animX);
     lv_anim_set_var(&s_animX, s_img);
     lv_anim_set_exec_cb(&s_animX, anim_set_x);
-    lv_anim_set_values(&s_animX, -driftX, driftX);
-    lv_anim_set_time(&s_animX, 6000);
-    lv_anim_set_playback_time(&s_animX, 6000);
+    lv_anim_set_values(&s_animX, -50, 50);
+    lv_anim_set_time(&s_animX, 8000);
+    lv_anim_set_playback_time(&s_animX, 8000);
     lv_anim_set_repeat_count(&s_animX, LV_ANIM_REPEAT_INFINITE);
     lv_anim_set_path_cb(&s_animX, lv_anim_path_ease_in_out);
     lv_anim_start(&s_animX);
 
-    // Y axis
+    // 5) Drift animation on Y axis
     lv_anim_init(&s_animY);
     lv_anim_set_var(&s_animY, s_img);
     lv_anim_set_exec_cb(&s_animY, anim_set_y);
-    lv_anim_set_values(&s_animY, -driftY, driftY);
-    lv_anim_set_time(&s_animY, 8000);
-    lv_anim_set_playback_time(&s_animY, 8000);
+    lv_anim_set_values(&s_animY, -30, 30);
+    lv_anim_set_time(&s_animY, 10000);
+    lv_anim_set_playback_time(&s_animY, 10000);
     lv_anim_set_repeat_count(&s_animY, LV_ANIM_REPEAT_INFINITE);
     lv_anim_set_path_cb(&s_animY, lv_anim_path_ease_in_out);
     lv_anim_start(&s_animY);
 
-    // Micro motion
+    // 6) Micro-motion: additive vertical jitter using style translate_y
     lv_anim_init(&s_animMicro);
     lv_anim_set_var(&s_animMicro, s_img);
     lv_anim_set_exec_cb(&s_animMicro, anim_set_translate_y);
-    lv_anim_set_values(&s_animMicro, -2, 2);
-    lv_anim_set_time(&s_animMicro, 1500);
-    lv_anim_set_playback_time(&s_animMicro, 1500);
+    lv_anim_set_values(&s_animMicro, -8, 8);
+    lv_anim_set_time(&s_animMicro, 3000);
+    lv_anim_set_playback_time(&s_animMicro, 3000);
     lv_anim_set_repeat_count(&s_animMicro, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&s_animMicro, lv_anim_path_ease_in_out);
+    lv_anim_set_path_cb(&s_animMicro, lv_anim_path_linear);
     lv_anim_start(&s_animMicro);
-}
 
-static void stop_drift_animations() {
-    if (obj_valid(s_img)) {
-        lv_anim_del(s_img, nullptr);
-        lv_obj_set_style_translate_y(s_img, 0, 0);
-    }
-}
+    // 7) Hint label (localized)
+    s_hint_label = lv_label_create(s_overlay);
+    lv_label_set_text(s_hint_label, tr("touch_to_wake"));
+    lv_obj_set_style_text_color(s_hint_label, lv_color_hex(0x808080), 0);
+    lv_obj_align(s_hint_label, LV_ALIGN_BOTTOM_MID, 0, -20);
 
-// ─────────────────────────────────────────────────────────────
-// Show the screensaver overlay
-// ─────────────────────────────────────────────────────────────
-void screensaver_show(void)
-{
-    // If AP web holds the saver, do absolutely nothing:
-    // no overlay, no backlight changes, no CH422G traffic.
-    if (s_apweb_hold) {
-        // Optional: Serial.println("[Screensaver] show() ignored: AP-web HOLD");
-        return;
-    }
-
-    if (s_active) return;
-
-    // 1) Ensure overlay exists (parent = lv_layer_top)
-    if (!obj_valid(s_overlay)) {
-        s_overlay = lv_obj_create(lv_layer_top());
-        lv_obj_remove_style_all(s_overlay);
-        lv_obj_set_size(s_overlay, LV_HOR_RES, LV_VER_RES);
-        lv_obj_set_style_bg_color(s_overlay, lv_color_black(), 0);
-        lv_obj_set_style_bg_opa(s_overlay, LV_OPA_COVER, 0);
-        lv_obj_set_scroll_dir(s_overlay, LV_DIR_NONE);
-        lv_obj_set_scrollbar_mode(s_overlay, LV_SCROLLBAR_MODE_OFF);
-        lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_clear_flag(s_overlay, LV_OBJ_FLAG_CLICKABLE);
-
-        // Image child
-        s_img = lv_img_create(s_overlay);
-        lv_img_set_src(s_img, &welcome_screen);
-        const int Z = 320; // 320/256 ≈ 1.25x zoom
-        lv_img_set_pivot(s_img, welcome_screen.header.w / 2, welcome_screen.header.h / 2);
-        lv_img_set_zoom (s_img, Z);
-        lv_obj_align(s_img, LV_ALIGN_CENTER, 0, 0);
-
-        // "Touch to wake" label
-        s_hint_label = lv_label_create(s_overlay);
-        lv_label_set_text(s_hint_label, tr("touch_to_wake"));
-        lv_obj_set_style_text_color(s_hint_label, lv_color_white(), 0);
-        lv_obj_set_style_text_opa  (s_hint_label, LV_OPA_60, 0);
-        lv_obj_set_style_text_font (s_hint_label, &ui_font_16, 0);
-        lv_obj_align(s_hint_label, LV_ALIGN_BOTTOM_MID, 0, -12);
-
-        // Compute safe drift area
-        const int imgW    = (welcome_screen.header.w * Z) / 256;
-        const int imgH    = (welcome_screen.header.h * Z) / 256;
-        const int marginX = LV_MAX(0, (imgW - LV_HOR_RES) / 2);
-        const int marginY = LV_MAX(0, (imgH - LV_VER_RES) / 2);
-        const int driftX  = LV_MIN(56, LV_MAX(10, marginX - 2));
-        const int driftY  = LV_MIN(56, LV_MAX(10, marginY - 2));
-
-        start_drift_animations(driftX, driftY);
-    } else {
-        // Reuse overlay
-        lv_obj_clear_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
-        if (!obj_valid(s_img)) {
-            s_img = lv_img_create(s_overlay);
-            lv_img_set_src(s_img, &welcome_screen);
-            lv_obj_align(s_img, LV_ALIGN_CENTER, 0, 0);
-        } else {
-            lv_obj_set_style_translate_y(s_img, 0, 0);
-            lv_obj_align(s_img, LV_ALIGN_CENTER, 0, 0);
-        }
-
-        if (!obj_valid(s_hint_label)) {
-            s_hint_label = lv_label_create(s_overlay);
-            lv_label_set_text(s_hint_label, tr("touch_to_wake"));
-            lv_obj_set_style_text_color(s_hint_label, lv_color_white(), 0);
-            lv_obj_set_style_text_opa  (s_hint_label, LV_OPA_60, 0);
-            lv_obj_set_style_text_font (s_hint_label, &ui_font_16, 0);
-            lv_obj_align(s_hint_label, LV_ALIGN_BOTTOM_MID, 0, -12);
-        }
-
-        stop_drift_animations();
-        start_drift_animations(24, 24);
-    }
-
-#if defined(HAS_HAL_BACKLIGHT_SET)
-    hal::backlight_set(20); // dim if AP3032 CTRL is wired
-#else
-    hal::backlight_on();
-#endif
-
-    // Fade-in
-    lv_obj_set_style_opa(s_overlay, LV_OPA_TRANSP, 0);
-    {
-        lv_anim_t a; 
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, s_overlay);
-        lv_anim_set_exec_cb(&a, set_obj_opa);
-        lv_anim_set_values(&a, LV_OPA_TRANSP, LV_OPA_COVER);
-        lv_anim_set_time(&a, 300);
-        lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
-        lv_anim_start(&a);
-    }
-
+    // 8) Optional full-frame refresh timer (for smoother animation)
     start_fullframe_refresh_timer();
 
     s_active = true;
-    Serial.println("[Screensaver] Overlay activated (top layer, easing, forced refresh "
-#if SCREENSAVER_FORCE_FULL_REFRESH
-                   "ON"
-#else
-                   "OFF"
-#endif
-                   ")");
+    Serial.println("[Screensaver] Overlay activated (top layer, easing, forced refresh OFF)");
 }
 
 // ─────────────────────────────────────────────────────────────
-// Core hide (no screen switch): fade out overlay, stop anims, hide overlay
+// Public hide
 // ─────────────────────────────────────────────────────────────
-static void ss_hide_core_internal(void)
+void screensaver_hide()
+{
+    ss_hide_core_internal();
+}
+
+// ─────────────────────────────────────────────────────────────
+// Async hide (for touch ISR context; does NOT resume gate polling)
+// ─────────────────────────────────────────────────────────────
+void screensaver_hide_async()
 {
     if (!s_active) return;
-
-    stop_drift_animations();
-    stop_fullframe_refresh_timer();
-
-    // brightness back
-    hal::backlight_on();
-
-    if (obj_valid(s_overlay)) {
-        lv_anim_t a; 
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, s_overlay);
-        lv_anim_set_exec_cb(&a, set_obj_opa);
-        lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-        lv_anim_set_time(&a, 260);
-        lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
-        lv_anim_set_ready_cb(&a, [](lv_anim_t* /*anim*/) {
-            if (obj_valid(s_overlay)) {
-                if (obj_valid(s_img)) {
-                    lv_obj_set_style_translate_y(s_img, 0, 0);
-                }
-                lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_set_style_opa(s_overlay, LV_OPA_COVER, 0); // reset for next time
-            }
-        });
-        lv_anim_start(&a);
-    }
-
-    s_active = false;
-    Serial.println("[Screensaver] Overlay hide scheduled (no screen switch)");
+    
+    // Flag for main loop to call screensaver_hide()
+    // This is safer than calling LVGL operations from ISR
+    extern bool g_screensaver_hide_requested;
+    g_screensaver_hide_requested = true;
 }
 
-// Public wrappers
-void screensaver_hide(void) { ss_hide_core_internal(); }
-
-static void ss_async_hide_cb(void* /*ud*/) { ss_hide_core_internal(); }
-
-void screensaver_hide_async(void) { lv_async_call(ss_async_hide_cb, NULL); }
+bool screensaver_is_active()
+{
+    return s_active;
+}

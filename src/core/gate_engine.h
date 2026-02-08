@@ -1,4 +1,3 @@
-
 #pragma once
 #include <stdint.h>
 
@@ -10,6 +9,7 @@
  * - Legacy single timestamp API (gate_trigger / gate_timestamp)
  * - Block/unblock range capture per gate (for two‑gate UA)
  * - Inline simulation helpers for UI testing
+ * - Gate state query for GUI animation
  */
 
 // Identify gates by index
@@ -37,6 +37,10 @@ bool     gate_get_last_block_start_us(GateID gate, uint64_t& t_us);
 
 // Returns true if a valid (start,end) pair exists with end > start
 bool     gate_get_last_block_range_us(GateID gate, uint64_t& t_start_us, uint64_t& t_end_us);
+
+// ---- Gate state query for GUI animation ----
+// Query if gate is currently blocked (ISR-safe, read-only)
+bool     gate_is_blocked(GateID id);
 
 // ---- Simulation helpers for UI testing ----
 inline void gate_simulate_gate_a() { gate_trigger(GATE_A); }

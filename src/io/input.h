@@ -1,8 +1,4 @@
-
-// src/io/input.h
 #pragma once
-#include "../core/config.h"     // pins & timing constants
-#include "../core/event_bus.h"  // Event types if you publish from input.cpp
 
 struct Buttons {
   int prevSelect = HIGH;
@@ -11,7 +7,12 @@ struct Buttons {
 
 void input_init();
 void input_poll_and_publish(Buttons &btns);
+void input_read(Buttons &btns, int &currentA, int &currentB);
 
-// helpers (if you wire physical buttons)
-void input_read(Buttons &btns, int &currentSelect, int &currentDown);
-bool input_edge_falling(int prev, int curr);
+// Configure pushbuttons on expander (set to -1 to disable)
+void input_configure_pushbuttons(int select_exio = -1, int down_exio = -1, bool active_low = true);
+
+// Register a button edge callback: id 0 = Select, 1 = Down.
+// pressed==true for press event, false for release event.
+using input_button_cb_t = void (*)(int id, bool pressed);
+void input_set_button_callback(input_button_cb_t cb);

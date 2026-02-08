@@ -41,3 +41,19 @@ void gui_set_extra(const char* text);
 // NEW: global activity + armed status for screensaver logic
 void gui_note_user_activity();   // mark activity + wake screen if needed
 bool gui_is_armed();             // true when any experiment screen is armed
+
+// Poll for experiment completion from real optical gates (when simulation OFF)
+void gui_poll_real_gate_experiments();
+
+// Animate simulation buttons based on real gate state
+void gui_set_sim_button_state(int gate_index, bool active);
+
+// Update simulation button colors (called from main loop)
+void gui_update_sim_button_colors();
+
+// Simulation button animation control
+void gui_start_sim_button_animation();
+void gui_stop_sim_button_animation();
+
+// Screen transition guard (blocks I²C polling during LVGL screen loads)
+extern volatile bool g_screen_transition_active;

@@ -2,7 +2,7 @@
  * chronos_sd.cpp
  * Chronos – SD card bring-up (SPI) using HAL expander
  * [Updated: 2026-01-19 22:55 CET]
- * [Updated: 2026-01-24 17:05 CET] CLEAN: fix missing statics + ref-counted CS guard
+ * [Updated: 2026-02-04] Use I2C executor for CS expander ops to avoid contention
  *****/
 #include <Arduino.h>
 #include <SPI.h>
@@ -11,6 +11,8 @@
 #include "export_fs.h"           // chronos::exportfs_set_fs(&SD)
 #include "src/drivers/hal_panel.h"
 #include "chronos_sd.h"
+#include "../drivers/hal_i2c_executor.h"
+#include "../drivers/hal_i2c_manager.h" // fallback
 
 static bool s_sd_ready = false;
 static bool s_cs_low   = false;
@@ -27,21 +29,67 @@ bool chronos_sd_is_ready() {
 }
 
 /* ---------- CS helpers (CH422G via HAL) ---------------------------------- */
+
+// Executor-backed contexts to call HAL expander wrappers from the executor task
+struct expander_setdir_ctx {
+  uint8_t exio;
+  bool output;
+  bool result;
+};
+static esp_err_t expander_setdir_op(void* vctx) {
+  expander_setdir_ctx* ctx = static_cast<expander_setdir_ctx*>(vctx);
+  if (!ctx) return ESP_ERR_INVALID_ARG;
+  bool ok = hal::expander_pinMode(ctx->exio, ctx->output);
+  ctx->result = ok;
+  return ok ? ESP_OK : ESP_FAIL;
+}
+
+struct expander_setlevel_ctx {
+  uint8_t exio;
+  int level;
+  bool result;
+};
+static esp_err_t expander_setlevel_op(void* vctx) {
+  expander_setlevel_ctx* ctx = static_cast<expander_setlevel_ctx*>(vctx);
+  if (!ctx) return ESP_ERR_INVALID_ARG;
+  bool ok = hal::expander_digitalWrite(ctx->exio, ctx->level ? true : false);
+  ctx->result = ok;
+  return ok ? ESP_OK : ESP_FAIL;
+}
+
 static inline void cs_drive(bool low) {
   if (!hal::expander_wait_ready(800)) return;
 
   // Configure SD_CS direction once (reduces I2C traffic and failure rate)
   if (!s_cs_dir_set) {
     for (int i = 0; i < 3; ++i) {
-      if (hal::expander_pinMode(SD_CS, /*output*/ true)) { s_cs_dir_set = true; break; }
+      expander_setdir_ctx ctx{ (uint8_t)SD_CS, true, false };
+      esp_err_t r = hal_i2c_exec_sync(expander_setdir_op, &ctx, 120);
+      if (r == ESP_OK && ctx.result) { s_cs_dir_set = true; break; }
+
+      // fallback quick retry using mutex if executor busy/unavailable
+      if (hal::i2c_lock(40)) {
+        bool ok = hal::expander_pinMode(SD_CS, /*output*/ true);
+        hal::i2c_unlock();
+        if (ok) { s_cs_dir_set = true; break; }
+      }
       delay(2);
     }
   }
 
   // LOW selects, HIGH de-selects (retry a few times in case I2C is busy)
-  const bool level_high = low ? /*LOW*/ false : /*HIGH*/ true;
+  const int level = low ? 0 : 1;
   for (int i = 0; i < 3; ++i) {
-    if (hal::expander_digitalWrite(SD_CS, level_high)) break;
+    expander_setlevel_ctx ctx{ (uint8_t)SD_CS, level, false };
+    esp_err_t r = hal_i2c_exec_sync(expander_setlevel_op, &ctx, 120);
+    if (r == ESP_OK && ctx.result) break;
+
+    // fallback to mutex-based attempt
+    if (hal::i2c_lock(40)) {
+      bool ok = hal::expander_digitalWrite(SD_CS, level ? true : false);
+      hal::i2c_unlock();
+      if (ok) break;
+    }
     delay(2);
   }
 
@@ -128,4 +176,5 @@ bool chronos_sd_begin() {
   uint64_t mb = SD.cardSize() / (1024ULL * 1024ULL);
   Serial.printf("[Chronos][SD] ready, card ~ %llu MB\n", (unsigned long long)mb);
   return true;
+
 }

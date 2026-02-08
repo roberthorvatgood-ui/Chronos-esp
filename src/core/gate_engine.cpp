@@ -1,4 +1,3 @@
-
 #include "gate_engine.h"
 #include <Arduino.h>
 #include <esp_timer.h>
@@ -8,6 +7,7 @@
  * --------------------------
  * 1) Legacy single-timestamp path (A/B/C) used by CV/Photogate screens.
  * 2) Per-gate block range capture (start/end) used by two‑gate UA.
+ * 3) Gate state tracking for GUI animation (ISR-safe flags).
  */
 
 // --- Legacy simple timestamps (A/B/C) ---
@@ -17,12 +17,16 @@ static uint64_t timestamps[3] = {0, 0, 0};
 static uint64_t last_block_start[3] = {0,0,0};
 static uint64_t last_block_end  [3] = {0,0,0};
 
+// --- GUI animation state (ISR-safe flags) ---
+static volatile bool gate_blocked[3] = {false, false, false};
+
 void gate_engine_init()
 {
   for (int i = 0; i < 3; ++i) timestamps[i] = 0;
   for (int i = 0; i < 3; ++i) {
     last_block_start[i] = 0;
     last_block_end  [i] = 0;
+    gate_blocked[i] = false;
   }
 }
 
@@ -47,6 +51,9 @@ void gate_block_start(GateID id)
     last_block_end[id] = 0;
   }
   Serial.printf("[Gate] Block START %d at %llu us\n", id, (unsigned long long)last_block_start[id]);
+  
+  // Set flag for GUI animation (ISR-safe)
+  gate_blocked[id] = true;
 }
 
 void gate_block_end(GateID id)
@@ -64,6 +71,9 @@ void gate_block_end(GateID id)
     // No start or invalid ordering; ignore
     Serial.printf("[Gate] Block END   %d ignored (no valid start)\n", id);
   }
+  
+  // Clear flag for GUI animation (ISR-safe)
+  gate_blocked[id] = false;
 }
 
 bool gate_get_last_block_start_us(GateID gate, uint64_t& t_us)
@@ -82,4 +92,10 @@ bool gate_get_last_block_range_us(GateID gate, uint64_t& t_start_us, uint64_t& t
   t_start_us = last_block_start[gate];
   t_end_us   = last_block_end  [gate];
   return true;
+}
+
+bool gate_is_blocked(GateID id)
+{
+  if (id > GATE_C) return false;
+  return gate_blocked[id];
 }

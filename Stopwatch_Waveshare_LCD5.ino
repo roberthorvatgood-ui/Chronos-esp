@@ -1,8 +1,7 @@
-
 /*****
  * Chronos – Main Application (.ino)
- * Integrated SD Export + Web UI
- * [Updated: 2026-01-25 13:30 CET]
+ * Integrated SD Export + Web UI + CH422G Pushbutton Gates
+ * [Updated: 2026-02-08] Added I²C executor init and gate input pause/resume coordination
  *****/
 
 #include <Arduino.h>
@@ -12,11 +11,13 @@
 #endif
 
 #include "src/drivers/hal_panel.h"
+#include "src/drivers/hal_i2c_executor.h" // hal_i2c_exec_sync
 #include "src/gui/gui.h"
 #include "src/net/app_network.h"
 #include "src/core/event_bus.h"
 #include "src/core/app_controller.h"
 #include "src/io/input.h"
+#include "src/io/gate_input.h"            // NEW: Gate input pause/resume control
 #include "src/intl/i18n.h"
 #include "src/core/gate_engine.h"
 #include "src/experiments/experiments.h"
@@ -24,12 +25,11 @@
 #include "src/core/rtc_manager.h"
 #include "src/core/pcf85063a_hooks.h"
 
-// ── Export system (SD + Web UI) ────────────────────────────────────────────────
+// Export system (SD + Web UI)
 #include "src/export/export_fs.h"
 #include "src/export/chronos_sd.h"
 #include "src/export/web_export.h"
 
-// [2026-01-24 22:58 CET] ADD (Copilot): query if AP web is in FS critical section
 namespace chronos { bool apweb_fs_busy(); }
 
 EventBus gBus;
@@ -40,6 +40,7 @@ unsigned long gLastUserActivityMs = 0;  // last activity timestamp
 bool gScreenSaverActive = false;        // current screensaver state
 volatile bool gWakeFromSaverPending = false;
 volatile bool gWakeInProgress = false;  // avoid double wake
+volatile bool g_screensaver_hide_requested = false; 
 
 extern uint64_t gui_get_stopwatch_us() {
   return gApp.sw.elapsed_us();
@@ -72,32 +73,48 @@ static void load_screensaver_timeout() {
   Serial.printf("[Setup] Screensaver timeout (s): %lu\n", (unsigned long)gScreenSaverTimeoutS);
 }
 
-// [2026-01-18 22:20 CET] UPDATED: setup() order – apply Wi‑Fi preference before AP start
+// [2026-02-08] Main setup with I²C executor and CH422G pushbutton gate support
 void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 2000) {}
 
-  // --- Make CH422G the first owner of the I²C bus (prevents ESP_FAIL) ---
-  if (!chronos_sd_preinit()) {
-    Serial.println("[BOOT] CH422G preinit failed (will retry on export)");  // non-fatal
+  delay(50);
+  Serial.println("\n=== CHRONOS BOOT ===");
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CRITICAL: Initialize I²C executor FIRST (before any I²C operations)
+  // This creates a dedicated Core 0 task for serialized I²C access
+  // ═══════════════════════════════════════════════════════════════════════
+  if (!hal_i2c_executor_init(32)) {  // Queue size 32
+    Serial.println("[FATAL] I²C executor init failed!");
+    while(1) { delay(1000); }  // Halt system - cannot proceed without executor
   }
+  Serial.println("[I²C] Executor initialized (queue=32, core=0)");
 
-  esp_reset_reason_t r = esp_reset_reason();
-  Serial.printf("\n[BOOT] reset_reason=%d\n", (int)r);
-  delay(1000);
-
-  Serial.println("SETUP START");
-
+  // Localization
   i18n_init();
   i18n_load_saved();
   Serial.printf("[i18n] Boot language: %s\n", i18n_get_lang_code());
+  
+  // CRITICAL: Give executor task time to fully start
+  delay(100);
+
   load_screensaver_timeout();
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // HAL: panel, LCD, touch, backlight
+  // Now uses I²C executor for CH422G operations
+  // ═══════════════════════════════════════════════════════════════════════
   if (!hal::init())  Serial.println("[HAL] init() failed");
   if (!hal::begin()) Serial.println("[HAL] begin() failed");
   if (!hal::lvgl_init()) Serial.println("[HAL] lvgl_init() failed");
 
-  // --- Network bring-up honoring saved General Settings (apply first) ---
+  // Wait for CH422G expander to be ready (with timeout)
+  hal::expander_wait_ready(800);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Network bring-up honoring saved General Settings
+  // ═══════════════════════════════════════════════════════════════════════
   const bool wifi_on = load_wifi_pref_on();
   network_set_enabled(wifi_on);
 
@@ -112,32 +129,51 @@ void setup() {
     Serial.println("[Setup] Wi‑Fi preference: OFF -> radio powered down");
   }
 
-  // ---- Export system: mount SD & start Web UI (AP mode) -----------------
-  hal::expander_wait_ready(800);
+  // ═══════════════════════════════════════════════════════════════════════
+  // Export system: mount SD & start Web UI (AP mode)
+  // SD operations now protected by I²C executor when accessing CH422G CS pin
+  // ═══════════════════════════════════════════════════════════════════════
   if (!chronos_sd_begin()) {
     Serial.println("[Export] SD init failed — export UI will still start, but listing will be empty.");
   }
-  // Start AP + Web UI (AP+STA).
+  
+  // Start AP + Web UI (will trigger screensaver pause via apweb hold)
   chronos::apweb_begin("Chronos-AP", "chronos123");
 
-  // ---- Splash (optional) ------------------------------------------------
+  // ═══════════════════════════════════════════════════════════════════════
+  // Splash screen or main menu
+  // ═══════════════════════════════════════════════════════════════════════
 #if SHOW_SPLASH
   gui_show_splash_embedded();
 #else
   gui_show_main_menu();
 #endif
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Configure CH422G pushbuttons as gate inputs
+  // Map pushbuttons: IO0 -> Gate A, IO5 -> Gate B (active_low = true)
+  // Now reads via I²C executor for thread-safe access
+  // ═══════════════════════════════════════════════════════════════════════
+  Serial.println("[Setup] Configuring CH422G pushbuttons for gate inputs...");
+  input_configure_pushbuttons(0, 5, true);
+
+  // Initialize input system (will set CH422G to input mode and configure debounce)
   input_init();
 
+  // Subscribe to event bus
   gBus.subscribe(&onBusEvent);
 
-  // Attach hardware RTC (PCF85063A on SDA=8, SCL=9) via hooks
+  // ═══════════════════════════════════════════════════════════════════════
+  // Attach hardware RTC (PCF85063A on SDA=8, SCL=9)
+  // Now uses I²C executor for all RTC read/write operations
+  // ═══════════════════════════════════════════════════════════════════════
   init_pcf_hooks();
   delay(50);
 
   rtc_init();
   test_pcf_battery();
 
+  // Auto-clear OS/VL flag if RTC time is valid
   struct tm t {};
   rtc_get_time(t);
   if ((t.tm_year + 1900) >= 2024) {
@@ -148,60 +184,121 @@ void setup() {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Initialize gate engine and experiments
+  // ═══════════════════════════════════════════════════════════════════════
   gate_engine_init();
   experiments_init();
 
   gLastUserActivityMs = millis();
+  
+  Serial.println("=== CHRONOS READY ===\n");
 }
 
-// [2026-01-25 13:30 CET] UPDATED (Robert + Copilot):
-// - AP web now holds the screensaver via screensaver_set_apweb_hold().
-// - We no longer force-hide saver from apweb_fs_busy() here to avoid CH422G races.
+// [2026-02-08] Main loop with I²C-safe CH422G polling and screensaver coordination
 void loop() {
-  // Keep the web server responsive first; AP web also drives the saver hold gate.
+  // ═══════════════════════════════════════════════════════════════════════
+  // Web server and network processing
+  // ═══════════════════════════════════════════════════════════════════════
   chronos::apweb_loop();
-
-  // ---- Normal application path ----
-  // Drive Wi‑Fi portal FSM (scan/connect retries, etc.)
   network_process_portal();
 
-  // Poll physical buttons, publish events, and dispatch them
-  static Buttons gBtns;
-  input_poll_and_publish(gBtns);
+  // ═══════════════════════════════════════════════════════════════════════
+  // Gate input polling - ONLY if not paused
+  // Small delay to reduce I²C bus pressure
+  // ═══════════════════════════════════════════════════════════════════════
+  static unsigned long last_gate_poll_ms = 0;
+  if (!gate_input_is_paused() && (millis() - last_gate_poll_ms >= 10)) {
+    static Buttons gBtns;
+    input_poll_and_publish(gBtns);
+    last_gate_poll_ms = millis();
+  }
+  
+  // ═══════════════════════════════════════════════════════════════════════
+  // Event bus and experiment state
+  // ═══════════════════════════════════════════════════════════════════════
   gBus.dispatch();
+  gui_poll_real_gate_experiments();
+  
+  // Note: gui_update_sim_button_colors() removed - feature deferred due to
+  // LVGL timer conflicts with I²C operations. Will implement event-driven
+  // animation in future update.
 
-  // ---- Deferred screensaver wake-up (safe LVGL context) ----
+  // ═══════════════════════════════════════════════════════════════════════
+  // Screensaver wake handling
+  // ═══════════════════════════════════════════════════════════════════════
   if (gScreenSaverActive && gWakeFromSaverPending && !gWakeInProgress) {
     gWakeInProgress = true;
-    screensaver_hide_async();  // run hide in LVGL async context
+    
+    Serial.println("[Screensaver] Wake requested - keeping gates paused during backlight");
+    
+    // 1. Hide screensaver overlay (keeps gate polling paused)
+    screensaver_hide();
+    
+    // 2. Turn on backlight with retries
+    for (int retry = 0; retry < 5; retry++) {
+      delay(50);
+      hal::backlight_on();
+      delay(50);
+      break;
+    }
+    
+    // 3. Wait longer for I²C to settle
+    delay(500);
+    
+    // 4. Resume gate polling
+    gate_input_resume();
+    
     gScreenSaverActive = false;
     gWakeFromSaverPending = false;
     gWakeInProgress = false;
-    Serial.println("[Screensaver] Woke on user activity (deferred)");
+    
+    Serial.println("[Screensaver] Wake complete");
   }
 
-  // ---- Screensaver logic ----
+  // ═══════════════════════════════════════════════════════════════════════
+  // Screensaver timeout logic
+  // Automatically pauses gate polling to reduce I²C bus load
+  // ══════════════════════════════════════════════════════════��════════════
   const unsigned long now = millis();
   const bool measuring        = gApp.sw.running();
   const bool experimentsArmed = gui_is_armed();
-  const bool portalRunning    = network_portal_running();  // (your stub returns false in AP-only)
+  const bool portalRunning    = network_portal_running();
   const bool blockSaver       = measuring || experimentsArmed || portalRunning;
 
   if (blockSaver) {
+    // Activity detected: reset timer and ensure screen is on
     gLastUserActivityMs = now;
     if (gScreenSaverActive) {
+      screensaver_hide();  // This will resume gate polling
       hal::backlight_on();
       gScreenSaverActive = false;
+      Serial.println("[Loop] Screensaver hidden (activity detected)");
     }
   } else if (gScreenSaverTimeoutS > 0) {
+    // Check for timeout
     const unsigned long timeout_ms = (unsigned long)gScreenSaverTimeoutS * 1000UL;
     if (!gScreenSaverActive && (now - gLastUserActivityMs >= timeout_ms)) {
+      Serial.println("[Loop] Screensaver timeout - pausing gates");
+      
+      // Pause gates FIRST
+      gate_input_pause();
+      
+      // Wait for any in-flight I²C operations to complete
+      delay(100);
+      
+      // Now show screensaver
       screensaver_show();
       gScreenSaverActive = true;
     }
   }
 
-  // LVGL heartbeat (animations, screen loads, timers)
+  // ═══════════════════════════════════════════════════════════════════════
+  // LVGL task handler (must be called regularly for UI updates)
+  // ═══════════════════════════════════════════════════════════════════════
   lv_timer_handler();
-  delay(2);
+  
+  // Delay slightly longer (5ms instead of 2ms) to reduce I²C polling frequency
+  // and give executor task more breathing room
+  delay(5);
 }

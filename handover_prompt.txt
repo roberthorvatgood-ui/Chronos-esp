@@ -1,0 +1,64 @@
+I’m working on a project called Chronos on a Waveshare ESP32‑S3‑Touch‑LCD‑5 devkit (5" RGB LCD + GT911 touch + CH422G IO expander, I2C0 on SDA=8/SCL=9).
+
+Repo layout (Arduino sketch):
+
+- `Stopwatch_Waveshare_LCD5.ino` – main app
+- `src/drivers/hal_panel.{h,cpp}` – ESP_Panel / LVGL / CH422G HAL
+- `src/core/gate_engine.{h,cpp}` – pure logic gate timing engine (no hardware)
+- `src/experiments/experiments.{h,cpp}` – experiment math (CV, Photogate, UA, FreeFall, Incline, Tacho)
+- `src/gui/gui.{h,cpp}` – LVGL GUI
+- `src/io/input.{h,cpp}` – glue between hardware inputs and gate_engine
+
+My goal:
+
+- Use IO0 and IO1 of the CH422G IO expander as **GATE A** and **GATE B** (optical gates).
+- Feed their rising/falling edges into `gate_engine` so all experiments use real timing:
+  - Single timestamps via `gate_trigger(GATE_A/B)` → used by CV, Photogate, FreeFall, Tachometer.
+  - Block start/end via `gate_block_start/end(GATE_A/B)` → used by UA (Uniform Acceleration) and Inclined Plane.
+
+The good news:
+
+- `gate_engine` and the experiments/GUI are already wired correctly and work with **simulation** gates:
+  - GUI simulation callbacks call:
+    - `gate_simulate_gate_a()` / `gate_simulate_gate_b()` → `gate_trigger(GATE_A/B)`
+    - `gate_simulate_block_a()` / `gate_simulate_unblock_a()` → `gate_block_start/end(GATE_A)`
+    - `gate_simulate_block_b()` / `gate_simulate_unblock_b()` → `gate_block_start/end(GATE_B)`
+  - `experiments.cpp` only depends on `gate_engine` APIs (`gate_timestamp`, `gate_get_last_block_*`).
+  - All physics logic and UI is correct and stable in simulation.
+
+The hard part:
+
+- When we try to read the CH422G from `input.cpp` and then open the “Linear Motion (CV)” screen (via `gui_show_cv()`), we sometimes get an **Interrupt WDT timeout on CPU1** and the board reboots.
+- If we keep `input.cpp` as a *no‑op* (no CH422G access), everything is stable and CV opens fine; experiments run via simulation only.
+
+### Hardware / driver context
+
+- The board uses ESP_Panel and the C API for CH422G:
+
+  ```cpp
+  // hal_panel.cpp (summarized)
+  static esp_io_expander_handle_t s_hal_expander = nullptr;
+
+  static void create_and_attach_ch422g_if_needed() {
+    if (s_hal_expander) return;
+    esp_io_expander_handle_t h = nullptr;
+    // CH422G on I2C0, typical address (ESP_IO_EXPANDER_I2C_CH422G_ADDRESS or 0x24)
+    if (esp_io_expander_new_i2c_ch422g(I2C_NUM_0, CH422G_ADDR, &h) == ESP_OK && h) {
+      s_hal_expander = h;
+      Serial.println("[HAL] CH422G handle created via C API (I2C0)");
+    }
+  }
+
+  namespace hal {
+    bool begin(bool start_backlight_on) {
+      g_panel->begin();               // sets up board, I2C0, etc.
+      create_and_attach_ch422g_if_needed();
+      (void)expander_wait_ready(800); // waits until s_hal_expander is non-null
+      if (start_backlight_on) backlight_on();
+      return true;
+    }
+
+    bool expander_ready();
+    bool expander_wait_ready(uint32_t timeout_ms);
+    esp_io_expander_handle_t expander_get_handle();  // returns s_hal_expander
+  }

@@ -5,6 +5,19 @@
 #include <string>
 #include <Print.h>
 
+// Experiment states
+enum class ExperimentState {
+  IDLE,
+  ARMED,
+  RUNNING,
+  FINISHED
+};
+
+ExperimentState experiment_get_state();
+void experiment_set_state(ExperimentState s);
+bool experiment_should_poll_gates();
+
+
 // Lifecycle
 void experiments_init();
 void experiments_clear_timestamps(); // resets timing state in gate engine
@@ -68,9 +81,6 @@ void experiments_clear_history(const char* mode);
 
 // Writes the full experiments CSV to any Print (Serial, File, WiFiClient, etc.)
 void experiments_emit_csv(Print& out);
-
-// Existing convenience wrapper preserved (prints to Serial)
-void experiments_export_csv();
 
 // ------------------------- CSV Export -------------------------
 void experiments_export_csv();
