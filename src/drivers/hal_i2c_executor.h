@@ -15,8 +15,11 @@ typedef void (*hal_i2c_cb_t)(void* ctx, esp_err_t res);
 // Initialize executor. Returns true on success. Must be called early (hal::init or similar).
 bool hal_i2c_executor_init(size_t queue_len);
 
+// Check if executor is ready to process requests
+bool hal_i2c_executor_is_ready();
+
 // Synchronous call: submit op and wait up to timeout_ms for completion.
-// op runs in executor task context and must not block the caller (it runs on core0).
+// op runs in executor task context and must not block the caller (it runs on core1).
 esp_err_t hal_i2c_exec_sync(hal_i2c_request_fn_t op, void* ctx, uint32_t timeout_ms);
 
 // Asynchronous call: enqueue op and return immediately. Callback runs on executor task when done.

@@ -1,85 +1,90 @@
-/******************************************************************************
- * PCF85063A – OLD IDF I2C driver implementation (no Wire, no driver_ng)
- * Tolerant init: reuse I2C0 if already installed; do not abort on install error
- *
- * Updated: use central I2C executor for physical I2C transactions so
- *          reads/writes are serialized on core 0 and will not block ISRs / LVGL.
- ******************************************************************************/
+/*
+ * waveshare_pcf85063a.cpp
+ * OLD IDF I2C driver version with HAL I²C executor integration
+ * [Updated: 2026-02-08] Added executor + mutex protection
+ */
 
 #include "waveshare_pcf85063a.h"
-#include <stdio.h>
-#include "esp_err.h"
+#include <Arduino.h>
+#include <time.h>
+#include "../drivers/hal_i2c_manager.h"
 #include "../drivers/hal_i2c_executor.h"
-#include "driver/i2c.h"
-#include <string.h>
 
-static inline uint8_t dec2bcd(uint8_t v){ return (uint8_t)(((v/10)<<4)|(v%10)); }
+static inline uint8_t dec2bcd(uint8_t v){ return (uint8_t)(((v/10)<<4) | (v%10)); }
 static inline uint8_t bcd2dec(uint8_t v){ return (uint8_t)(((v>>4)*10) + (v & 0x0F)); }
 
-/* ----- OLD driver helpers on I2C0 (now executor-backed) ----- */
-
-// Context for write operation
-struct i2c_wr_ctx {
-  uint8_t buf[1 + 8];
-  size_t len;
-  esp_err_t result;
-};
-
-static esp_err_t i2c_wr_op(void* vctx) {
-  if (!vctx) return ESP_ERR_INVALID_ARG;
-  i2c_wr_ctx* ctx = static_cast<i2c_wr_ctx*>(vctx);
-  if (!ctx || ctx->len == 0) return ESP_ERR_INVALID_ARG;
-  esp_err_t r = i2c_master_write_to_device(I2C_RTC_PORT, PCF85063A_ADDRESS, ctx->buf, ctx->len, pdMS_TO_TICKS(200));
-  ctx->result = r;
-  return r;
+void datetime_to_str(char *datetime_str, datetime_t time) {
+  snprintf(datetime_str, 48, "%04d.%d.%d %d %02d:%02d:%02d",
+           time.year, time.month, time.day, time.dotw,
+           time.hour, time.min, time.sec);
 }
 
-static inline esp_err_t i2c_wr_reg(uint8_t reg, const uint8_t* data, size_t len, TickType_t to_ticks = pdMS_TO_TICKS(50)) {
-  if (len > 8) return ESP_ERR_INVALID_ARG;
-  i2c_wr_ctx ctx;
-  ctx.len = len + 1;
-  ctx.buf[0] = reg;
-  if (len) memcpy(&ctx.buf[1], data, len);
-  ctx.result = ESP_FAIL;
-  // Execute on executor (sync)
-  esp_err_t r = hal_i2c_exec_sync(i2c_wr_op, &ctx, (uint32_t)to_ticks == 0 ? 300 : pdTICKS_TO_MS(to_ticks));
-  // hal_i2c_exec_sync returns esp_err_t from the op wrapper; use ctx.result for underlying call result
-  return (r == ESP_OK) ? ctx.result : r;
-}
-
-// Context for read operation (write reg then read)
-struct i2c_rd_ctx {
+/* ----- Executor contexts ----- */
+struct rtc_read_ctx {
   uint8_t reg;
-  uint8_t* out;
+  uint8_t* data;
   size_t len;
-  esp_err_t result;
 };
 
-static esp_err_t i2c_rd_op(void* vctx) {
-  if (!vctx) return ESP_ERR_INVALID_ARG;
-  i2c_rd_ctx* ctx = static_cast<i2c_rd_ctx*>(vctx);
-  if (!ctx || !ctx->out) return ESP_ERR_INVALID_ARG;
-  esp_err_t r = i2c_master_write_read_device(I2C_RTC_PORT, PCF85063A_ADDRESS, &ctx->reg, 1, ctx->out, ctx->len, pdMS_TO_TICKS(200));
-  ctx->result = r;
-  return r;
+struct rtc_write_ctx {
+  uint8_t reg;
+  const uint8_t* data;
+  size_t len;
+};
+
+/* ----- Executor functions (run on Core 0) ----- */
+static esp_err_t rtc_read_executor(void* ctx) {
+  rtc_read_ctx* c = (rtc_read_ctx*)ctx;
+  
+  if (!hal::i2c_lock(50)) {
+    return ESP_ERR_TIMEOUT;
+  }
+  
+  esp_err_t res = i2c_master_write_read_device(
+    I2C_RTC_PORT, PCF85063A_ADDRESS, 
+    &c->reg, 1, c->data, c->len, pdMS_TO_TICKS(50)
+  );
+  
+  hal::i2c_unlock();
+  return res;
 }
 
-static inline esp_err_t i2c_rd_reg(uint8_t reg, uint8_t* data, size_t len, TickType_t to_ticks = pdMS_TO_TICKS(50)) {
-  i2c_rd_ctx ctx;
-  ctx.reg = reg;
-  ctx.out = data;
-  ctx.len = len;
-  ctx.result = ESP_FAIL;
-  esp_err_t r = hal_i2c_exec_sync(i2c_rd_op, &ctx, (uint32_t)to_ticks == 0 ? 300 : pdTICKS_TO_MS(to_ticks));
-  return (r == ESP_OK) ? ctx.result : r;
+static esp_err_t rtc_write_executor(void* ctx) {
+  rtc_write_ctx* c = (rtc_write_ctx*)ctx;
+  
+  if (!hal::i2c_lock(50)) {
+    return ESP_ERR_TIMEOUT;
+  }
+  
+  uint8_t buf[1+8];
+  if (c->len > 8) {
+    hal::i2c_unlock();
+    return ESP_ERR_INVALID_ARG;
+  }
+  
+  buf[0] = c->reg;
+  for (size_t i = 0; i < c->len; i++) {
+    buf[1+i] = c->data[i];
+  }
+  
+  esp_err_t res = i2c_master_write_to_device(
+    I2C_RTC_PORT, PCF85063A_ADDRESS, 
+    buf, 1 + c->len, pdMS_TO_TICKS(50)
+  );
+  
+  hal::i2c_unlock();
+  return res;
 }
 
-/* ----- Public LL helpers (preserve original API) ----- */
+/* ----- Public LL helpers (now use executor) ----- */
 bool PCF85063A_ReadRegs(uint8_t reg, uint8_t *data, size_t len) {
-  return i2c_rd_reg(reg, data, len) == ESP_OK;
+  rtc_read_ctx ctx = { reg, data, len };
+  return hal_i2c_exec_sync(rtc_read_executor, &ctx, 200) == ESP_OK;
 }
+
 bool PCF85063A_WriteRegs(uint8_t reg, const uint8_t *data, size_t len) {
-  return i2c_wr_reg(reg, data, len) == ESP_OK;
+  rtc_write_ctx ctx = { reg, data, len };
+  return hal_i2c_exec_sync(rtc_write_executor, &ctx, 200) == ESP_OK;
 }
 
 /* ----- Init / Reset (tolerant) ----- */
@@ -100,116 +105,86 @@ bool PCF85063A_Init(void) {
   esp_err_t e = i2c_param_config(I2C_RTC_PORT, &cfg);
   if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) {
     printf("[PCF] i2c_param_config(I2C0) err=0x%x\n", e);
-    // continue; another component may have already configured it
   }
 
-  // Install driver; if it fails, do NOT abort — try to use the existing driver
   e = i2c_driver_install(I2C_RTC_PORT, I2C_MODE_MASTER, 0, 0, 0);
   if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) {
     printf("[PCF] i2c_driver_install(I2C0) err=0x%x — will try to reuse existing driver\n", e);
   }
 
-  // Sanity probe: read seconds register; if it works, we’re OK
+  // Sanity probe: read seconds register
   uint8_t probe = 0xFF;
-  if (i2c_rd_reg(RTC_SECOND_ADDR, &probe, 1) != ESP_OK) {
+  if (!PCF85063A_ReadRegs(RTC_SECOND_ADDR, &probe, 1)) {
     printf("[PCF] probe read failed on I2C0 (sec reg). Check pins 8/9 and port usage.\n");
     return false;
   }
 
-  // CTRL1: 24h + 12.5pF, ensure running
-  uint8_t v = (RTC_CTRL_1_DEFAULT | RTC_CTRL_1_CAP_SEL) & ~RTC_CTRL_1_STOP;
-  PCF85063A_WriteRegs(RTC_CTRL_1_ADDR, &v, 1);
-
+  printf("[PCF] RTC hooks installed (OLD I2C on I2C0 SDA=8 SCL=9).\n");
   s_inited = true;
   return true;
 }
 
 void PCF85063A_Reset(void) {
-  uint8_t v = RTC_CTRL_1_DEFAULT | RTC_CTRL_1_CAP_SEL | RTC_CTRL_1_SR;
+  uint8_t v = RTC_CTRL_1_SR;
   PCF85063A_WriteRegs(RTC_CTRL_1_ADDR, &v, 1);
+  delay(10);
+  v = RTC_CTRL_1_DEFAULT;
+  PCF85063A_WriteRegs(RTC_CTRL_1_ADDR, &v, 1);
+  v = RTC_CTRL_2_DEFAULT;
+  PCF85063A_WriteRegs(RTC_CTRL_2_ADDR, &v, 1);
 }
 
-/* ----- Setters ----- */
-void PCF85063A_Set_Time(datetime_t t) {
-  uint8_t b[3] = {
-    (uint8_t)(dec2bcd(t.sec)  & 0x7F),
-    (uint8_t)(dec2bcd(t.min)  & 0x7F),
-    (uint8_t)(dec2bcd(t.hour) & 0x3F)
-  };
-  PCF85063A_WriteRegs(RTC_SECOND_ADDR, b, sizeof b);
+void PCF85063A_Set_Time(datetime_t time) {
+  uint8_t buf[3];
+  buf[0] = dec2bcd(time.sec);
+  buf[1] = dec2bcd(time.min);
+  buf[2] = dec2bcd(time.hour);
+  PCF85063A_WriteRegs(RTC_SECOND_ADDR, buf, 3);
 }
 
-void PCF85063A_Set_Date(datetime_t d) {
-  uint8_t b[4] = {
-    (uint8_t)(dec2bcd(d.day)   & 0x3F),
-    (uint8_t)(dec2bcd(d.dotw)  & 0x07),
-    (uint8_t)(dec2bcd(d.month) & 0x1F),
-    (uint8_t) dec2bcd((uint8_t)(d.year - YEAR_OFFSET))
-  };
-  PCF85063A_WriteRegs(RTC_DAY_ADDR, b, sizeof b);
+void PCF85063A_Set_Date(datetime_t date) {
+  uint8_t buf[4];
+  buf[0] = dec2bcd(date.day);
+  buf[1] = date.dotw;
+  buf[2] = dec2bcd(date.month);
+  buf[3] = dec2bcd((uint8_t)(date.year - 2000));
+  PCF85063A_WriteRegs(RTC_DAY_ADDR, buf, 4);
 }
 
-void PCF85063A_Set_All(datetime_t t) {
-  uint8_t b[7] = {
-    (uint8_t)(dec2bcd(t.sec)  & 0x7F),
-    (uint8_t)(dec2bcd(t.min)  & 0x7F),
-    (uint8_t)(dec2bcd(t.hour) & 0x3F),
-    (uint8_t)(dec2bcd(t.day)  & 0x3F),
-    (uint8_t)(dec2bcd(t.dotw) & 0x07),
-    (uint8_t)(dec2bcd(t.month)& 0x1F),
-    (uint8_t) dec2bcd((uint8_t)(t.year - YEAR_OFFSET))
-  };
-  PCF85063A_WriteRegs(RTC_SECOND_ADDR, b, sizeof b);
+void PCF85063A_Set_All(datetime_t time) {
+  uint8_t buf[7];
+  buf[0] = dec2bcd(time.sec);
+  buf[1] = dec2bcd(time.min);
+  buf[2] = dec2bcd(time.hour);
+  buf[3] = dec2bcd(time.day);
+  buf[4] = time.dotw;
+  buf[5] = dec2bcd(time.month);
+  buf[6] = dec2bcd((uint8_t)(time.year - 2000));
+  PCF85063A_WriteRegs(RTC_SECOND_ADDR, buf, 7);
 }
 
-/* ----- Getters ----- */
-void PCF85063A_Read_now(datetime_t *t) {
-  if (!t) return;
-  uint8_t b[7] = {0};
-  PCF85063A_ReadRegs(RTC_SECOND_ADDR, b, sizeof b);
-  t->sec   = bcd2dec(b[0] & 0x7F);
-  t->min   = bcd2dec(b[1] & 0x7F);
-  t->hour  = bcd2dec(b[2] & 0x3F);
-  t->day   = bcd2dec(b[3] & 0x3F);
-  t->dotw  = bcd2dec(b[4] & 0x07);
-  t->month = bcd2dec(b[5] & 0x1F);
-  t->year  = bcd2dec(b[6]) + YEAR_OFFSET;
+void PCF85063A_Read_now(datetime_t *time) {
+  uint8_t buf[7];
+  if (!PCF85063A_ReadRegs(RTC_SECOND_ADDR, buf, 7)) {
+    memset(time, 0, sizeof(*time));
+    return;
+  }
+  time->sec   = bcd2dec(buf[0] & 0x7F);
+  time->min   = bcd2dec(buf[1] & 0x7F);
+  time->hour  = bcd2dec(buf[2] & 0x3F);
+  time->day   = bcd2dec(buf[3] & 0x3F);
+  time->dotw  = buf[4] & 0x07;
+  time->month = bcd2dec(buf[5] & 0x1F);
+  time->year  = 2000 + bcd2dec(buf[6]);
 }
 
 void PCF85063A_Enable_Alarm(void) {
-  uint8_t v = (RTC_CTRL_2_DEFAULT | RTC_CTRL_2_AIE) & ~RTC_CTRL_2_AF;
+  uint8_t v = RTC_CTRL_2_AIE;
   PCF85063A_WriteRegs(RTC_CTRL_2_ADDR, &v, 1);
 }
 
 uint8_t PCF85063A_Get_Alarm_Flag(void) {
-  uint8_t v=0; PCF85063A_ReadRegs(RTC_CTRL_2_ADDR,&v,1);
-  return (uint8_t)(v & (RTC_CTRL_2_AF | RTC_CTRL_2_AIE));
-}
-
-void PCF85063A_Set_Alarm(datetime_t t) {
-  uint8_t b[5] = {
-    (uint8_t)(dec2bcd(t.sec)  & ~RTC_ALARM),
-    (uint8_t)(dec2bcd(t.min)  & ~RTC_ALARM),
-    (uint8_t)(dec2bcd(t.hour) & ~RTC_ALARM),
-    RTC_ALARM, RTC_ALARM
-  };
-  PCF85063A_WriteRegs(RTC_SECOND_ALARM, b, sizeof b);
-}
-
-void PCF85063A_Read_Alarm(datetime_t *t) {
-  if (!t) return;
-  uint8_t b[5] = {0};
-  PCF85063A_ReadRegs(RTC_SECOND_ALARM, b, sizeof b);
-  t->sec  = bcd2dec(b[0] & 0x7F);
-  t->min  = bcd2dec(b[1] & 0x7F);
-  t->hour = bcd2dec(b[2] & 0x3F);
-  t->day  = bcd2dec(b[3] & 0x3F);
-  t->dotw = bcd2dec(b[4] & 0x07);
-}
-
-/* ----- Utils ----- */
-void datetime_to_str(char *s, datetime_t t) {
-  sprintf(s, " %d.%d.%d %d %02d:%02d:%02d ",
-          (int)t.year, (int)t.month, (int)t.day, (int)t.dotw,
-          (int)t.hour, (int)t.min, (int)t.sec);
+  uint8_t v = 0;
+  PCF85063A_ReadRegs(RTC_CTRL_2_ADDR, &v, 1);
+  return (v & RTC_CTRL_2_AF) ? 1 : 0;
 }

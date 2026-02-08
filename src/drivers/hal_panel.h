@@ -67,7 +67,6 @@ bool expander_digitalWrite(uint8_t exio, bool high);
 void expander_attach(esp_io_expander_handle_t h);
 /** Return the raw IO expander handle (nullable; advanced uses). */
 esp_io_expander_handle_t expander_get_handle();
-
 } // namespace hal
 
 #define HAS_HAL_BACKLIGHT_SET 1
