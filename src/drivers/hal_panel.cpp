@@ -2,13 +2,15 @@
 /*****
  * hal_panel.cpp
  * Waveshare ESP32‑S3‑Touch‑LCD‑5 – HAL wrapper
- * [Updated: 2026-01-19 23:58 CET]
+ * [Updated: 2026-02-09]
  *  - Creates CH422G via C API: esp_io_expander_new_i2c_ch422g(I2C_NUM_0, addr, &handle)
  *  - Bounded wait for expander readiness
  *  - Honor begin(start_backlight_on)
  *  - IO‑expander helpers use pin mask (1u<<exio)
+ *  - All CH422G operations now serialized through I²C executor
  *****/
 #include "hal_panel.h"
+#include "hal_i2c_executor.h"
 #include <Arduino.h>
 #include "driver/ledc.h"
 
@@ -101,6 +103,47 @@ static void create_and_attach_ch422g_if_needed() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// I²C Executor contexts for CH422G operations
+// ═══════════════════════════════════════════════════════════════════════
+
+struct expander_setdir_ctx {
+  esp_io_expander_handle_t handle;
+  uint32_t mask;
+  io_expander_dir_t dir;
+};
+
+struct expander_setlevel_ctx {
+  esp_io_expander_handle_t handle;
+  uint32_t mask;
+  int level;
+};
+
+struct expander_getlevel_ctx {
+  esp_io_expander_handle_t handle;
+  uint32_t mask;
+  uint32_t* level_out;
+};
+
+// Executor functions run on I²C executor task (Core 1)
+static esp_err_t expander_setdir_op(void* ctx) {
+  auto* c = (expander_setdir_ctx*)ctx;
+  if (!c->handle) return ESP_ERR_INVALID_STATE;
+  return esp_io_expander_set_dir(c->handle, c->mask, c->dir);
+}
+
+static esp_err_t expander_setlevel_op(void* ctx) {
+  auto* c = (expander_setlevel_ctx*)ctx;
+  if (!c->handle) return ESP_ERR_INVALID_STATE;
+  return esp_io_expander_set_level(c->handle, c->mask, c->level);
+}
+
+static esp_err_t expander_getlevel_op(void* ctx) {
+  auto* c = (expander_getlevel_ctx*)ctx;
+  if (!c->handle || !c->level_out) return ESP_ERR_INVALID_ARG;
+  return esp_io_expander_get_level(c->handle, c->mask, c->level_out);
+}
+
 } // namespace
 
 namespace hal {
@@ -175,16 +218,30 @@ bool expander_wait_ready(uint32_t timeout_ms) {
 
 bool expander_pinMode(uint8_t exio, bool output) {
   if (!s_hal_expander) return false;
-  const uint32_t mask = (1u << exio);
-  return esp_io_expander_set_dir(
-           s_hal_expander, mask,
-           output ? IO_EXPANDER_OUTPUT : IO_EXPANDER_INPUT) == ESP_OK;
+  
+  // Use I²C executor for serialized access
+  expander_setdir_ctx ctx;
+  ctx.handle = s_hal_expander;
+  ctx.mask = (1u << exio);
+  ctx.dir = output ? IO_EXPANDER_OUTPUT : IO_EXPANDER_INPUT;
+  
+  // 120ms timeout for pin configuration
+  esp_err_t r = hal_i2c_exec_sync(expander_setdir_op, &ctx, 120);
+  return (r == ESP_OK);
 }
 
 bool expander_digitalWrite(uint8_t exio, bool high) {
   if (!s_hal_expander) return false;
-  const uint32_t mask = (1u << exio);
-  return esp_io_expander_set_level(s_hal_expander, mask, high ? 1 : 0) == ESP_OK;
+  
+  // Use I²C executor for serialized access
+  expander_setlevel_ctx ctx;
+  ctx.handle = s_hal_expander;
+  ctx.mask = (1u << exio);
+  ctx.level = high ? 1 : 0;
+  
+  // 120ms timeout for pin write
+  esp_err_t r = hal_i2c_exec_sync(expander_setlevel_op, &ctx, 120);
+  return (r == ESP_OK);
 }
 
 void expander_attach(esp_io_expander_handle_t h) {
@@ -202,8 +259,15 @@ bool expander_digitalRead(uint8_t pin, uint8_t* out_level)
 {
   if (!s_hal_expander || !out_level) return false;
   
+  // Use I²C executor for serialized access
   uint32_t level = 0;
-  esp_err_t e = esp_io_expander_get_level(s_hal_expander, (1ULL << pin), &level);
+  expander_getlevel_ctx ctx;
+  ctx.handle = s_hal_expander;
+  ctx.mask = (1ULL << pin);
+  ctx.level_out = &level;
+  
+  // 120ms timeout for pin read
+  esp_err_t e = hal_i2c_exec_sync(expander_getlevel_op, &ctx, 120);
   
   if (e == ESP_OK) {
     *out_level = (level & (1ULL << pin)) ? 1 : 0;

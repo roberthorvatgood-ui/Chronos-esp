@@ -63,22 +63,45 @@ static inline int lvl_to_digital(bool v)    { return v ? HIGH : LOW; }
 
 // ----------------- Executor-backed expander read ---------------------------
 
-struct expander_read_ctx {
+// Context for atomic read operation (all-input mode -> read -> restore outputs)
+struct expander_atomic_read_ctx {
   esp_io_expander_handle_t h;
-  uint32_t mask;
+  uint32_t read_mask;
+  uint32_t output_restore_mask;
+  uint32_t sd_cs_mask;
   uint32_t out;
 };
 
-// Read the CH422G input pins using get_level (which reads inputs when pins are configured as INPUT)
-static esp_err_t expander_read_op(void* vctx) {
+// Atomically: enable all-input, read, restore outputs, set SD_CS high
+// This entire sequence runs in the executor context without interruption
+static esp_err_t expander_atomic_read_op(void* vctx) {
   if (!vctx) return ESP_ERR_INVALID_ARG;
-  expander_read_ctx* ctx = static_cast<expander_read_ctx*>(vctx);
+  expander_atomic_read_ctx* ctx = static_cast<expander_atomic_read_ctx*>(vctx);
   if (!ctx->h) return ESP_ERR_INVALID_ARG;
   
+  // Step 1: Enable all-input mode for reading
+  esp_err_t err = esp_io_expander_ch422g_set_all_input(ctx->h);
+  if (err != ESP_OK) {
+    return err;
+  }
+  
+  // Step 2: Read the input pins
   uint32_t val = 0;
-  esp_err_t r = esp_io_expander_get_level(ctx->h, ctx->mask, &val);
-  if (r == ESP_OK) ctx->out = val;
-  return r;
+  err = esp_io_expander_get_level(ctx->h, ctx->read_mask, &val);
+  if (err != ESP_OK) {
+    return err;
+  }
+  ctx->out = val;
+  
+  // Step 3: IMMEDIATELY restore output pins (critical for SD and LCD)
+  err = esp_io_expander_set_dir(ctx->h, ctx->output_restore_mask, IO_EXPANDER_OUTPUT);
+  if (err != ESP_OK) {
+    return err;
+  }
+  
+  // Step 4: Set SD_CS high (deselect SD card)
+  err = esp_io_expander_set_level(ctx->h, ctx->sd_cs_mask, 1);
+  return err;
 }
 
 static uint8_t read_inputs_raw()
@@ -89,54 +112,23 @@ static uint8_t read_inputs_raw()
         return 0xFF;
     }
 
-    // Strategy: Temporarily enable all-input mode, read, then restore outputs
-    // This is necessary because CH422G doesn't support reliable mixed-mode I/O
-    
-    // Step 1: Enable all-input mode for reading
-    esp_err_t err = esp_io_expander_ch422g_set_all_input(h);
-    if (err != ESP_OK) {
-        Serial.printf("[Input] Failed to enable input mode for read: 0x%x\n", err);
-        return 0xFF;
-    }
-    
-    // Step 2: Read the input pins
-    expander_read_ctx ctx;
+    // Use atomic executor operation to avoid race conditions
+    // This ensures the entire sequence (all-input -> read -> restore) is atomic
+    expander_atomic_read_ctx ctx;
     ctx.h = h;
-    ctx.mask = 0xFF; // Read all 8 pins
+    ctx.read_mask = 0xFF;  // Read all 8 pins
+    ctx.output_restore_mask = (1u << 2) | (1u << 4);  // IO2=LCD_BL, IO4=SD_CS
+    ctx.sd_cs_mask = (1u << 4);  // SD_CS pin
     ctx.out = 0xFF;  // Default to all high
-
-    err = hal_i2c_exec_sync(expander_read_op, &ctx, 300);
-    uint8_t snapshot = 0xFF;
+    
+    esp_err_t err = hal_i2c_exec_sync(expander_atomic_read_op, &ctx, 300);
     
     if (err == ESP_OK) {
-        snapshot = static_cast<uint8_t>(ctx.out & 0xFF);
+        return static_cast<uint8_t>(ctx.out & 0xFF);
     } else {
-        // Fallback: direct read with mutex
-        if (hal::i2c_lock(50)) {
-            uint32_t v = 0;
-            esp_err_t r = esp_io_expander_get_level(h, 0xFF, &v);
-            hal::i2c_unlock();
-            if (r == ESP_OK) {
-                snapshot = static_cast<uint8_t>(v & 0xFF);
-            }
-        }
+        Serial.printf("[Input] Atomic read failed: 0x%x\n", err);
+        return 0xFF;  // Default to all high on error
     }
-    
-    // Step 3: IMMEDIATELY restore output pins (critical for SD and LCD)
-    const uint32_t output_pins = (1u << 2) | (1u << 4);  // IO2=LCD_BL, IO4=SD_CS
-    
-    err = esp_io_expander_set_dir(h, output_pins, IO_EXPANDER_OUTPUT);
-    if (err != ESP_OK) {
-        Serial.printf("[Input] Warning: Failed to restore outputs: 0x%x\n", err);
-    }
-    
-    // Step 4: Set SD_CS high (deselect SD card)
-    err = esp_io_expander_set_level(h, (1u << 4), 1);
-    if (err != ESP_OK) {
-        Serial.printf("[Input] Warning: Failed to set SD_CS: 0x%x\n", err);
-    }
-    
-    return snapshot;
 }
 
 // ----------------- Pushbutton-to-gate mapping ------------------------------

@@ -83,13 +83,13 @@ void setup() {
 
   // ═══════════════════════════════════════════════════════════════════════
   // CRITICAL: Initialize I²C executor FIRST (before any I²C operations)
-  // This creates a dedicated Core 0 task for serialized I²C access
+  // This creates a dedicated Core 1 task for serialized I²C access
   // ═══════════════════════════════════════════════════════════════════════
   if (!hal_i2c_executor_init(32)) {  // Queue size 32
     Serial.println("[FATAL] I²C executor init failed!");
     while(1) { delay(1000); }  // Halt system - cannot proceed without executor
   }
-  Serial.println("[I²C] Executor initialized (queue=32, core=0)");
+  Serial.println("[I²C] Executor initialized (queue=32, core=1)");
 
   // Localization
   i18n_init();

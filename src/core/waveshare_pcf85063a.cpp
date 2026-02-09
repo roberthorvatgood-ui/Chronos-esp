@@ -32,7 +32,7 @@ struct rtc_write_ctx {
   size_t len;
 };
 
-/* ----- Executor functions (run on Core 0) ----- */
+/* ----- Executor functions (run on I²C executor task) ----- */
 static esp_err_t rtc_read_executor(void* ctx) {
   rtc_read_ctx* c = (rtc_read_ctx*)ctx;
   
