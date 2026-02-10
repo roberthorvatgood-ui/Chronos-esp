@@ -13,7 +13,11 @@
 #include "../drivers/hal_i2c_executor.h"// hal_i2c_exec_sync
 #include "../drivers/hal_i2c_manager.h" // fallback mutex
 #include "../core/gate_engine.h"
+#include "../core/event_bus.h"          // EventBus for gate events
 #include "input.h"
+
+// External event bus (defined in main .ino)
+extern EventBus gBus;
 
 // Include the correct header
 #if __has_include(<port/esp_io_expander.h>)
@@ -323,9 +327,11 @@ void input_poll_and_publish(Buttons& btns)
             if (input_edge_falling(prev_d, curr_d)) {
                 gate_trigger(GATE_A);
                 gate_block_start(GATE_A);
+                gBus.publish(EVT_GATE_A_FALL, (uint32_t)millis());
                 Serial.printf("[GATE DBG] Gate A FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             } else if (input_edge_rising(prev_d, curr_d)) {
                 gate_block_end(GATE_A);
+                gBus.publish(EVT_GATE_A_RISE, (uint32_t)millis());
                 Serial.printf("[GATE DBG] Gate A RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             }
         }
@@ -350,9 +356,11 @@ void input_poll_and_publish(Buttons& btns)
             if (input_edge_falling(prev_d, curr_d)) {
                 gate_trigger(GATE_B);
                 gate_block_start(GATE_B);
+                gBus.publish(EVT_GATE_B_FALL, (uint32_t)millis());
                 Serial.printf("[GATE DBG] Gate B FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             } else if (input_edge_rising(prev_d, curr_d)) {
                 gate_block_end(GATE_B);
+                gBus.publish(EVT_GATE_B_RISE, (uint32_t)millis());
                 Serial.printf("[GATE DBG] Gate B RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             }
         }

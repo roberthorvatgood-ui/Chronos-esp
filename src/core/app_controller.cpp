@@ -1,6 +1,11 @@
 
 #include <Arduino.h>
 #include "app_controller.h"
+#include "event_bus.h"
+#include "../gui/gui.h"
+
+// Gate mode enum (matches gui.cpp SwGateMode)
+enum class SwGateMode : uint8_t { None = 0, GateA = 1, GateAB = 2 };
 
 // MODE_ROUTES — central routing table for controller-driven navigation.
 // The order here defines the indices used throughout the app.
@@ -35,6 +40,71 @@ void AppController::prev_mode() {
   MODE_ROUTES[startIndex]();  // call it
 }
 
-void AppController::on_event(const Event& /*e*/) {
-  // No-op by default.
+void AppController::on_event(const Event& e) {
+  // Only handle gate events for stopwatch when on stopwatch screen and armed
+  if (!gui_is_stopwatch_screen()) return;
+  
+  SwGateMode mode = (SwGateMode)gui_get_stopwatch_mode();
+  if (mode == SwGateMode::None) return;
+  
+  bool armed = gui_is_armed();
+  if (!armed) return;
+  
+  // Handle gate events based on stopwatch mode
+  switch (e.type) {
+    case EVT_GATE_A_FALL:
+      // Gate A falling edge (beam blocked)
+      if (mode == SwGateMode::GateA) {
+        // Gate A mode: toggle start/stop on each Gate A trigger
+        if (!sw.running()) {
+          sw.start();
+          gui_sw_record_start();
+          Serial.println("[Stopwatch] Gate A: Started");
+        } else {
+          sw.stop();
+          gui_sw_record_stop();
+          Serial.println("[Stopwatch] Gate A: Stopped");
+        }
+      } else if (mode == SwGateMode::GateAB) {
+        // Gate A+B mode: start on Gate A
+        if (!sw.running()) {
+          sw.start();
+          gui_sw_record_start();
+          Serial.println("[Stopwatch] Gate A: Started (AB mode)");
+        } else {
+          // If already running, record a lap
+          gui_sw_record_lap();
+          Serial.println("[Stopwatch] Gate A: Lap (AB mode)");
+        }
+      }
+      break;
+      
+    case EVT_GATE_B_FALL:
+      // Gate B falling edge (beam blocked)
+      if (mode == SwGateMode::GateA) {
+        // In Gate A mode, Gate B triggers a lap
+        gui_sw_record_lap();
+        Serial.println("[Stopwatch] Gate B: Lap (A mode)");
+      } else if (mode == SwGateMode::GateAB) {
+        // Gate A+B mode: stop on Gate B
+        if (sw.running()) {
+          sw.stop();
+          gui_sw_record_stop();
+          Serial.println("[Stopwatch] Gate B: Stopped (AB mode)");
+        } else {
+          // If not running, record a lap
+          gui_sw_record_lap();
+          Serial.println("[Stopwatch] Gate B: Lap (AB mode, not running)");
+        }
+      }
+      break;
+      
+    case EVT_GATE_A_RISE:
+    case EVT_GATE_B_RISE:
+      // Rising edges (beam unblocked) - currently not used for stopwatch control
+      break;
+      
+    default:
+      break;
+  }
 }

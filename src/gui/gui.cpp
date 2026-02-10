@@ -723,6 +723,18 @@ bool gui_is_armed()
   return g_armed;
 }
 
+// Public accessor for stopwatch gate mode (used by app_controller)
+uint8_t gui_get_stopwatch_mode()
+{
+  return (uint8_t)g_sw_mode;
+}
+
+// Public accessor for current screen (used by app_controller)
+bool gui_is_stopwatch_screen()
+{
+  return g_current_screen == CurrentScreen::Stopwatch;
+}
+
 // ── Current screen tracking ───────────────────────────────────────────────────
 enum class CurrentScreen : uint8_t {
   None = 0,
@@ -1524,6 +1536,25 @@ static void update_lap_history()
     lv_obj_update_layout(lbl);
     y += (int)lv_obj_get_height(lbl) + 8;
   }
+}
+
+// Public wrappers for stopwatch event recording (used by app_controller for real gate events)
+void gui_sw_record_start()
+{
+  sw_record_event(LapEvent::Start);
+  update_lap_history();
+}
+
+void gui_sw_record_stop()
+{
+  sw_record_event(LapEvent::Stop);
+  update_lap_history();
+}
+
+void gui_sw_record_lap()
+{
+  sw_record_event(LapEvent::Lap);
+  update_lap_history();
 }
 
 static void sw_clear_history()
