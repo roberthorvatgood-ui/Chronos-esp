@@ -1763,7 +1763,7 @@ static void sw_startstop_cb(lv_event_t*)
     // ── Gate modes (unchanged behavior + timer period tweak) ────────────────
     g_armed = !g_armed;
     
-    // NEW: Set experiment state for gate polling
+    // Set experiment state to enable gate polling (matches CV/Photogate/UA/etc.)
     if (g_armed) {
       experiment_set_state(ExperimentState::ARMED);
       experiments_clear_timestamps();
