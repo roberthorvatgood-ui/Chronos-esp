@@ -953,23 +953,23 @@ void gui_poll_real_gate_experiments() {
       if (g_sw_mode == SwGateMode::None) break;
       
       // Track last timestamps to detect new events
-      // Use UINT64_MAX as uninitialized sentinel to avoid missing timestamp==0 events
-      static uint64_t sw_last_tA = UINT64_MAX;
-      static uint64_t sw_last_tB = UINT64_MAX;
+      // Initialized to 0 so first event will always trigger
+      static uint64_t sw_last_tA = 0;
+      static uint64_t sw_last_tB = 0;
       
       uint64_t tA = gate_timestamp(GATE_A);
       uint64_t tB = gate_timestamp(GATE_B);
       
-      // Reset timestamps when not armed or when timestamps are cleared
-      // This prevents missing events after re-arming
+      // Reset timestamps when not armed or when gate timestamps are cleared
+      // This prevents missing or duplicate events after re-arming
       if (!g_armed || (tA == 0 && tB == 0)) {
         sw_last_tA = 0;
         sw_last_tB = 0;
         break;
       }
       
-      // Check for new Gate A trigger (uninitialized or changed timestamp)
-      if (tA != 0 && (sw_last_tA == UINT64_MAX || tA != sw_last_tA)) {
+      // Check for new Gate A trigger (timestamp changed and not zero)
+      if (tA != 0 && tA != sw_last_tA) {
         sw_last_tA = tA;
         
         if (g_sw_mode == SwGateMode::GateA) {
@@ -1006,8 +1006,8 @@ void gui_poll_real_gate_experiments() {
         success = true;
       }
       
-      // Check for new Gate B trigger (uninitialized or changed timestamp)
-      if (tB != 0 && (sw_last_tB == UINT64_MAX || tB != sw_last_tB)) {
+      // Check for new Gate B trigger (timestamp changed and not zero)
+      if (tB != 0 && tB != sw_last_tB) {
         sw_last_tB = tB;
         
         if (g_sw_mode == SwGateMode::GateA) {
