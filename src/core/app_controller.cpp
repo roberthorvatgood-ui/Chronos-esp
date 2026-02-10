@@ -45,7 +45,7 @@ void AppController::prev_mode() {
 }
 
 void AppController::on_event(const Event& e) {
-  // CRITICAL: Don't process gate events during screen transitions
+  // Guard against processing gate events during screen transitions to prevent access to freed LVGL objects
   extern volatile bool g_screen_transition_active;
   if (g_screen_transition_active) return;
   
