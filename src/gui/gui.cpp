@@ -724,17 +724,6 @@ bool gui_is_armed()
 }
 
 // Public accessor for stopwatch gate mode (used by app_controller)
-uint8_t gui_get_stopwatch_mode()
-{
-  return (uint8_t)g_sw_mode;
-}
-
-// Public accessor for current screen (used by app_controller)
-bool gui_is_stopwatch_screen()
-{
-  return g_current_screen == CurrentScreen::Stopwatch;
-}
-
 // ── Current screen tracking ───────────────────────────────────────────────────
 enum class CurrentScreen : uint8_t {
   None = 0,
@@ -957,6 +946,88 @@ void gui_poll_real_gate_experiments() {
         }
         success = true;
       }
+      break;
+    }
+    
+    case CurrentScreen::Stopwatch: {
+      // Only process gate events when a gate mode is active
+      if (g_sw_mode == SwGateMode::None) break;
+      
+      // Track last timestamps to detect new events
+      static uint64_t sw_last_tA = 0;
+      static uint64_t sw_last_tB = 0;
+      
+      uint64_t tA = gate_timestamp(GATE_A);
+      uint64_t tB = gate_timestamp(GATE_B);
+      
+      // Check for new Gate A trigger
+      if (tA != 0 && tA != sw_last_tA) {
+        sw_last_tA = tA;
+        
+        if (g_sw_mode == SwGateMode::GateA) {
+          // GateA mode: toggle start/stop on each Gate A trigger
+          if (!gApp.sw.running()) {
+            gApp.sw.start();
+            sw_record_event(LapEvent::Start);
+            Serial.println("[GUI][Stopwatch] Gate A: Started");
+          } else {
+            gApp.sw.stop();
+            sw_record_event(LapEvent::Stop);
+            Serial.println("[GUI][Stopwatch] Gate A: Stopped");
+            
+            // Latch & paint final time immediately
+            const uint64_t us_final = gui_get_stopwatch_us();
+            char buf[24]; fmt_time_ms(buf, sizeof(buf), us_final);
+            if (sw_time_lbl) lv_label_set_text(sw_time_lbl, buf);
+            strncpy(sw_last_text, buf, sizeof(sw_last_text) - 1);
+            sw_last_text[sizeof(sw_last_text) - 1] = '\0';
+          }
+        } else if (g_sw_mode == SwGateMode::GateAB) {
+          // GateAB mode: start on Gate A, or record lap if already running
+          if (!gApp.sw.running()) {
+            gApp.sw.start();
+            sw_record_event(LapEvent::Start);
+            Serial.println("[GUI][Stopwatch] Gate A: Started (AB mode)");
+          } else {
+            sw_record_event(LapEvent::Lap);
+            Serial.println("[GUI][Stopwatch] Gate A: Lap (AB mode)");
+          }
+        }
+        
+        update_lap_history();
+        success = true;
+      }
+      
+      // Check for new Gate B trigger
+      if (tB != 0 && tB != sw_last_tB) {
+        sw_last_tB = tB;
+        
+        if (g_sw_mode == SwGateMode::GateA) {
+          // GateA mode: Gate B triggers a lap when running
+          if (gApp.sw.running()) {
+            sw_record_event(LapEvent::Lap);
+            Serial.println("[GUI][Stopwatch] Gate B: Lap (A mode)");
+          }
+        } else if (g_sw_mode == SwGateMode::GateAB) {
+          // GateAB mode: stop on Gate B when running
+          if (gApp.sw.running()) {
+            gApp.sw.stop();
+            sw_record_event(LapEvent::Stop);
+            Serial.println("[GUI][Stopwatch] Gate B: Stopped (AB mode)");
+            
+            // Latch & paint final time immediately
+            const uint64_t us_final = gui_get_stopwatch_us();
+            char buf[24]; fmt_time_ms(buf, sizeof(buf), us_final);
+            if (sw_time_lbl) lv_label_set_text(sw_time_lbl, buf);
+            strncpy(sw_last_text, buf, sizeof(sw_last_text) - 1);
+            sw_last_text[sizeof(sw_last_text) - 1] = '\0';
+          }
+        }
+        
+        update_lap_history();
+        success = true;
+      }
+      
       break;
     }
     
@@ -1538,25 +1609,6 @@ static void update_lap_history()
   }
 }
 
-// Public wrappers for stopwatch event recording (used by app_controller for real gate events)
-void gui_sw_record_start()
-{
-  sw_record_event(LapEvent::Start);
-  update_lap_history();
-}
-
-void gui_sw_record_stop()
-{
-  sw_record_event(LapEvent::Stop);
-  update_lap_history();
-}
-
-void gui_sw_record_lap()
-{
-  sw_record_event(LapEvent::Lap);
-  update_lap_history();
-}
-
 static void sw_clear_history()
 {
   lap_history.clear();
@@ -1710,6 +1762,15 @@ static void sw_startstop_cb(lv_event_t*)
 
     // ── Gate modes (unchanged behavior + timer period tweak) ────────────────
     g_armed = !g_armed;
+    
+    // NEW: Set experiment state for gate polling
+    if (g_armed) {
+      experiment_set_state(ExperimentState::ARMED);
+      experiments_clear_timestamps();
+    } else {
+      experiment_set_state(ExperimentState::IDLE);
+    }
+    
     set_arm_button_visual(sw_btn_startstop, g_armed, tr("Armed"), tr("Start / Arm"));
     if (!g_armed && gApp.sw.running()) {
         gApp.sw.stop();

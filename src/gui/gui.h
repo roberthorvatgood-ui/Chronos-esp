@@ -42,15 +42,6 @@ void gui_set_extra(const char* text);
 void gui_note_user_activity();   // mark activity + wake screen if needed
 bool gui_is_armed();             // true when any experiment screen is armed
 
-// NEW: stopwatch gate mode and screen status (for gate control in app_controller)
-uint8_t gui_get_stopwatch_mode(); // returns 0=None, 1=GateA, 2=GateAB
-bool gui_is_stopwatch_screen();   // true when stopwatch screen is active
-
-// NEW: stopwatch event recording (for real gate events in app_controller)
-void gui_sw_record_start();       // record start event and update history
-void gui_sw_record_stop();        // record stop event and update history
-void gui_sw_record_lap();         // record lap event and update history
-
 // Poll for experiment completion from real optical gates (when simulation OFF)
 void gui_poll_real_gate_experiments();
 
