@@ -133,6 +133,7 @@ static void on_settings(lv_event_t* e);
 
 // Stopwatch
 static void sw_clear_history();
+static void update_lap_history();
 static void sw_update_cb(lv_timer_t* t);
 static void sw_startstop_cb(lv_event_t* e);
 static void sw_reset_cb(lv_event_t* e);
@@ -721,18 +722,6 @@ static const char* get_effective_ta_text_for_save(lv_obj_t* ta)
 bool gui_is_armed()
 {
   return g_armed;
-}
-
-// Public accessor for stopwatch gate mode (used by app_controller)
-uint8_t gui_get_stopwatch_mode()
-{
-  return (uint8_t)g_sw_mode;
-}
-
-// Public accessor for current screen (used by app_controller)
-bool gui_is_stopwatch_screen()
-{
-  return g_current_screen == CurrentScreen::Stopwatch;
 }
 
 // ── Current screen tracking ───────────────────────────────────────────────────
@@ -1459,6 +1448,18 @@ static const char* sw_mode_name(SwGateMode m)
     case SwGateMode::GateAB:return tr("Gate A+B");
     default:                return tr("No gate");
   }
+}
+
+// Public accessor for stopwatch gate mode (used by app_controller)
+uint8_t gui_get_stopwatch_mode()
+{
+  return (uint8_t)g_sw_mode;
+}
+
+// Public accessor for current screen (used by app_controller)
+bool gui_is_stopwatch_screen()
+{
+  return g_current_screen == CurrentScreen::Stopwatch;
 }
 
 static void sw_mode_load()
