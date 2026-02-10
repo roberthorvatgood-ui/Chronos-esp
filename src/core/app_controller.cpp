@@ -45,6 +45,10 @@ void AppController::prev_mode() {
 }
 
 void AppController::on_event(const Event& e) {
+  // CRITICAL: Don't process gate events during screen transitions
+  extern volatile bool g_screen_transition_active;
+  if (g_screen_transition_active) return;
+  
   // Only handle gate events for stopwatch when on stopwatch screen and armed
   if (!gui_is_stopwatch_screen()) return;
   

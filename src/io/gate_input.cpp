@@ -79,11 +79,6 @@ void gate_input_poll() {
       return;
   }
   
-  // Check experiment state - only poll when armed or running
-  if (!experiment_should_poll_gates()) {
-    return;
-  }
-  
   // Throttle polling to reduce I²C bus load
   uint32_t now = millis();
   if (now - gLastPollMs < POLL_INTERVAL_MS) {

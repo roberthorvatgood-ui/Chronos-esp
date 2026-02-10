@@ -773,7 +773,11 @@ static void history_update_timer_cb(lv_timer_t* timer) {
   (void)timer;
   
   if (g_history_update_pending && g_pending_history_mode) {
-    update_history(g_pending_history_mode);
+    if (strcmp(g_pending_history_mode, "Stopwatch_lap") == 0) {
+      update_lap_history();  // stopwatch uses its own history format
+    } else {
+      update_history(g_pending_history_mode);
+    }
     g_history_update_pending = false;
     g_pending_history_mode = nullptr;
     
@@ -1542,19 +1546,25 @@ static void update_lap_history()
 void gui_sw_record_start()
 {
   sw_record_event(LapEvent::Start);
-  update_lap_history();
+  if (g_history_panel) {
+    request_history_update("Stopwatch_lap");
+  }
 }
 
 void gui_sw_record_stop()
 {
   sw_record_event(LapEvent::Stop);
-  update_lap_history();
+  if (g_history_panel) {
+    request_history_update("Stopwatch_lap");
+  }
 }
 
 void gui_sw_record_lap()
 {
   sw_record_event(LapEvent::Lap);
-  update_lap_history();
+  if (g_history_panel) {
+    request_history_update("Stopwatch_lap");
+  }
 }
 
 static void sw_clear_history()
@@ -1710,6 +1720,14 @@ static void sw_startstop_cb(lv_event_t*)
 
     // ── Gate modes (unchanged behavior + timer period tweak) ────────────────
     g_armed = !g_armed;
+    
+    // NEW: Set experiment state (matches all other working experiments)
+    if (g_armed) {
+      experiment_set_state(ExperimentState::ARMED);
+    } else {
+      experiment_set_state(ExperimentState::IDLE);
+    }
+    
     set_arm_button_visual(sw_btn_startstop, g_armed, tr("Armed"), tr("Start / Arm"));
     if (!g_armed && gApp.sw.running()) {
         gApp.sw.stop();
