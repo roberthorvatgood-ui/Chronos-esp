@@ -4,8 +4,9 @@
 #include "event_bus.h"
 #include "../gui/gui.h"
 
-// Stopwatch gate mode values (matches SwGateMode enum in gui.cpp)
-// 0=None, 1=GateA, 2=GateAB
+// Stopwatch gate mode values (must match SwGateMode enum in gui.cpp)
+// Defined here as constants to avoid header coupling.
+// Values from gui.cpp: enum class SwGateMode : uint8_t { None = 0, GateA = 1, GateAB = 2 };
 static constexpr uint8_t SW_MODE_NONE  = 0;
 static constexpr uint8_t SW_MODE_GATE_A = 1;
 static constexpr uint8_t SW_MODE_GATE_AB = 2;
