@@ -46,7 +46,6 @@ void AppController::prev_mode() {
 
 void AppController::on_event(const Event& e) {
   // Guard against processing gate events during screen transitions to prevent access to freed LVGL objects
-  extern volatile bool g_screen_transition_active;
   if (g_screen_transition_active) return;
   
   // Only handle gate events for stopwatch when on stopwatch screen and armed
