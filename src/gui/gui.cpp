@@ -960,6 +960,14 @@ void gui_poll_real_gate_experiments() {
       break;
     }
     
+    case CurrentScreen::Stopwatch: {
+      // Stopwatch uses event-driven gate handling via AppController::on_event()
+      // which listens to EVT_GATE_A_FALL, EVT_GATE_B_FALL events published by gate_input.cpp
+      // and calls gui_sw_record_start/stop/lap based on SwGateMode.
+      // No polling needed here - events are handled by the event bus.
+      break;
+    }
+    
     default:
       break;
   }

@@ -1,7 +1,11 @@
 #include "gate_input.h"
 #include "../experiments/experiments.h"
 #include "../drivers/hal_panel.h"
+#include "../core/gate_engine.h"
+#include "../core/event_bus.h"
 #include <Arduino.h>
+
+extern EventBus gBus;
 
 // ═════════════════���═════════════════════════════════════════════════════
 // Configuration
@@ -12,7 +16,7 @@
 #define ACTIVE_LOW  1    // Gates are active low
 
 // Polling throttle (ms between I²C reads)
-#define POLL_INTERVAL_MS  2
+#define POLL_INTERVAL_MS  20
 
 // ═══════════════════════════════════════════════════════════════════════
 // State
@@ -74,11 +78,6 @@ void gate_input_poll() {
   extern volatile bool g_screen_transition_active;
   if (g_screen_transition_active) return;
   
-  // NEW: Only poll if experiment is armed/running
-  if (!experiment_should_poll_gates()) {
-      return;
-  }
-  
   // Check experiment state - only poll when armed or running
   if (!experiment_should_poll_gates()) {
     return;
@@ -112,16 +111,38 @@ void gate_input_poll() {
     Serial.printf("[Gate] A: %d → %d\n", gGateA_last, gateA);
     gGateA_last = gateA;
     
-    // TODO: Trigger your experiment event handler
-    // Example: if (gateA == ACTIVE_LOW) { on_gate_a_blocked(); }
+    // Active low: 0 = blocked, 1 = unblocked
+    if (gateA == ACTIVE_LOW) {
+      // Falling edge (beam blocked)
+      gate_trigger(GATE_A);
+      gate_block_start(GATE_A);
+      gBus.publish(EVT_GATE_A_FALL, (uint32_t)millis());
+      Serial.println("[GateInput] Gate A FALL (blocked)");
+    } else {
+      // Rising edge (beam unblocked)
+      gate_block_end(GATE_A);
+      gBus.publish(EVT_GATE_A_RISE, (uint32_t)millis());
+      Serial.println("[GateInput] Gate A RISE (unblocked)");
+    }
   }
   
   if (gateB_changed) {
     Serial.printf("[Gate] B: %d → %d\n", gGateB_last, gateB);
     gGateB_last = gateB;
     
-    // TODO: Trigger your experiment event handler
-    // Example: if (gateB == ACTIVE_LOW) { on_gate_b_blocked(); }
+    // Active low: 0 = blocked, 1 = unblocked
+    if (gateB == ACTIVE_LOW) {
+      // Falling edge (beam blocked)
+      gate_trigger(GATE_B);
+      gate_block_start(GATE_B);
+      gBus.publish(EVT_GATE_B_FALL, (uint32_t)millis());
+      Serial.println("[GateInput] Gate B FALL (blocked)");
+    } else {
+      // Rising edge (beam unblocked)
+      gate_block_end(GATE_B);
+      gBus.publish(EVT_GATE_B_RISE, (uint32_t)millis());
+      Serial.println("[GateInput] Gate B RISE (unblocked)");
+    }
   }
 }
 
