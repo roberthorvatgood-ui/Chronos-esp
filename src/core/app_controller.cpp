@@ -4,8 +4,11 @@
 #include "event_bus.h"
 #include "../gui/gui.h"
 
-// Gate mode enum (matches gui.cpp SwGateMode)
-enum class SwGateMode : uint8_t { None = 0, GateA = 1, GateAB = 2 };
+// Stopwatch gate mode values (matches SwGateMode enum in gui.cpp)
+// 0=None, 1=GateA, 2=GateAB
+static constexpr uint8_t SW_MODE_NONE  = 0;
+static constexpr uint8_t SW_MODE_GATE_A = 1;
+static constexpr uint8_t SW_MODE_GATE_AB = 2;
 
 // MODE_ROUTES — central routing table for controller-driven navigation.
 // The order here defines the indices used throughout the app.
@@ -44,8 +47,8 @@ void AppController::on_event(const Event& e) {
   // Only handle gate events for stopwatch when on stopwatch screen and armed
   if (!gui_is_stopwatch_screen()) return;
   
-  SwGateMode mode = (SwGateMode)gui_get_stopwatch_mode();
-  if (mode == SwGateMode::None) return;
+  uint8_t mode = gui_get_stopwatch_mode();
+  if (mode == SW_MODE_NONE) return;
   
   bool armed = gui_is_armed();
   if (!armed) return;
@@ -54,21 +57,21 @@ void AppController::on_event(const Event& e) {
   switch (e.type) {
     case EVT_GATE_A_FALL:
       // Gate A falling edge (beam blocked)
-      if (mode == SwGateMode::GateA) {
+      if (mode == SW_MODE_GATE_A) {
         // Gate A mode: toggle start/stop on each Gate A trigger
-        if (!sw.running()) {
-          sw.start();
+        if (!this->sw.running()) {
+          this->sw.start();
           gui_sw_record_start();
           Serial.println("[Stopwatch] Gate A: Started");
         } else {
-          sw.stop();
+          this->sw.stop();
           gui_sw_record_stop();
           Serial.println("[Stopwatch] Gate A: Stopped");
         }
-      } else if (mode == SwGateMode::GateAB) {
+      } else if (mode == SW_MODE_GATE_AB) {
         // Gate A+B mode: start on Gate A
-        if (!sw.running()) {
-          sw.start();
+        if (!this->sw.running()) {
+          this->sw.start();
           gui_sw_record_start();
           Serial.println("[Stopwatch] Gate A: Started (AB mode)");
         } else {
@@ -81,21 +84,20 @@ void AppController::on_event(const Event& e) {
       
     case EVT_GATE_B_FALL:
       // Gate B falling edge (beam blocked)
-      if (mode == SwGateMode::GateA) {
-        // In Gate A mode, Gate B triggers a lap
-        gui_sw_record_lap();
-        Serial.println("[Stopwatch] Gate B: Lap (A mode)");
-      } else if (mode == SwGateMode::GateAB) {
-        // Gate A+B mode: stop on Gate B
-        if (sw.running()) {
-          sw.stop();
+      if (mode == SW_MODE_GATE_A) {
+        // In Gate A mode, Gate B triggers a lap only when running
+        if (this->sw.running()) {
+          gui_sw_record_lap();
+          Serial.println("[Stopwatch] Gate B: Lap (A mode)");
+        }
+      } else if (mode == SW_MODE_GATE_AB) {
+        // Gate A+B mode: stop on Gate B only when running
+        if (this->sw.running()) {
+          this->sw.stop();
           gui_sw_record_stop();
           Serial.println("[Stopwatch] Gate B: Stopped (AB mode)");
-        } else {
-          // If not running, record a lap
-          gui_sw_record_lap();
-          Serial.println("[Stopwatch] Gate B: Lap (AB mode, not running)");
         }
+        // If not running, ignore (user must start with Gate A first)
       }
       break;
       
