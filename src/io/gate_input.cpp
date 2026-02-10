@@ -111,8 +111,8 @@ void gate_input_poll() {
     Serial.printf("[Gate] A: %d → %d\n", gGateA_last, gateA);
     gGateA_last = gateA;
     
-    // Active low: 0 = blocked, 1 = unblocked
-    if (gateA == ACTIVE_LOW) {
+    // Active low gates: 0 = blocked (LOW), 1 = unblocked (HIGH)
+    if (gateA == 0) {
       // Falling edge (beam blocked)
       gate_trigger(GATE_A);
       gate_block_start(GATE_A);
@@ -130,8 +130,8 @@ void gate_input_poll() {
     Serial.printf("[Gate] B: %d → %d\n", gGateB_last, gateB);
     gGateB_last = gateB;
     
-    // Active low: 0 = blocked, 1 = unblocked
-    if (gateB == ACTIVE_LOW) {
+    // Active low gates: 0 = blocked (LOW), 1 = unblocked (HIGH)
+    if (gateB == 0) {
       // Falling edge (beam blocked)
       gate_trigger(GATE_B);
       gate_block_start(GATE_B);
