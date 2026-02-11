@@ -268,19 +268,6 @@ void input_poll_and_publish(Buttons& btns)
 
     uint8_t snap = read_inputs_raw();
 
-    // Debug: only log when snapshot changes to reduce serial spam
-    static uint8_t last_logged_snap = 0xFF;
-    static bool first_log = true;
-    if (snap != last_logged_snap || first_log) {
-        Serial.printf("[DBG] snap=0x%02X btnA_last=%d cntA=%u btnB_last=%d cntB=%u gA=%d gB=%d\n",
-                      snap,
-                      sBtnA_last, sBtnA_count,
-                      sBtnB_last, sBtnB_count,
-                      gGateALevel, gGateBLevel);
-        last_logged_snap = snap;
-        first_log = false;
-    }
-
     // Determine raw samples for gates
     bool sampleA_raw = (snap & GATE_A_MASK) != 0;
     bool sampleB_raw = (snap & GATE_B_MASK) != 0;

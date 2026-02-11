@@ -1004,14 +1004,12 @@ void gui_poll_real_gate_experiments() {
             sw_record_event(LapEvent::Stop);
           }
         } else if (g_sw_mode == SwGateMode::GateAB) {
-          // Gate A starts
+          // Gate A starts only (does not record laps when running)
           if (!gApp.sw.running()) {
             gApp.sw.start();
             sw_record_event(LapEvent::Start);
-          } else {
-            // Already running, record a lap
-            sw_record_event(LapEvent::Lap);
           }
+          // If already running, ignore the gate trigger
         }
         update_lap_history();
         success = true;
@@ -1025,7 +1023,7 @@ void gui_poll_real_gate_experiments() {
           // Gate B records a lap
           sw_record_event(LapEvent::Lap);
         } else if (g_sw_mode == SwGateMode::GateAB) {
-          // Gate B stops
+          // Gate B stops only (ignore if not running)
           if (gApp.sw.running()) {
             gApp.sw.stop();
             sw_record_event(LapEvent::Stop);
@@ -1040,10 +1038,8 @@ void gui_poll_real_gate_experiments() {
             
             // Relax refresh
             if (sw_timer) lv_timer_set_period(sw_timer, 250);
-          } else {
-            // Not running, record a lap
-            sw_record_event(LapEvent::Lap);
           }
+          // If not running, ignore the gate trigger
         }
         update_lap_history();
         success = true;
