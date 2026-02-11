@@ -12,12 +12,12 @@ void input_read(Buttons &btns, int &currentA, int &currentB);
 // Configure pushbuttons on expander (set to -1 to disable)
 void input_configure_pushbuttons(int select_exio = -1, int down_exio = -1, bool active_low = true);
 
+// Pause/resume gate polling (used by screensaver, screen transitions)
+void input_pause();
+void input_resume();
+bool input_is_paused();
+
 // Register a button edge callback: id 0 = Select, 1 = Down.
 // pressed==true for press event, false for release event.
 using input_button_cb_t = void (*)(int id, bool pressed);
 void input_set_button_callback(input_button_cb_t cb);
-
-// Pause/resume gate polling (replaces gate_input.h)
-void input_pause();
-void input_resume();
-bool input_is_paused();

@@ -1,12 +1,13 @@
 /*****
  * input.cpp
  * Handles photogate inputs (CH422G expander) and optional pushbutton-to-gate mapping.
- * ALL I2C expander operations are executed via the central hal_i2c_executor
+ * ALL I²C expander operations are executed via the central hal_i2c_executor
  * as a single atomic operation to prevent bus contention with GT911 touch.
  *
  * FIX (2026-02-07): Ensure CH422G is in input mode and use correct read sequence
  * FIX (2026-02-11): Wrap entire set_all_input→read→restore cycle in one executor op
  * FIX (2026-02-11): Reduce poll period to 5ms and debounce to 1 for fast gate response
+ * FIX (2026-02-11): Atomic full_read_op — eliminates GT911 touch interleaving
  *****/
 
 #include <Arduino.h>
@@ -48,11 +49,11 @@ static bool    sB_last  = true;
 static constexpr uint8_t STABLE_COUNT = 1;
 static const unsigned long POLL_PERIOD_MS = 5;
 
-// Throttling
-static unsigned long sLastPollMs = 0;
-
 // Pause flag
 static bool sPaused = false;
+
+// Throttling
+static unsigned long sLastPollMs = 0;
 
 // Gate indices/masks
 #ifndef GATE_A_DI_INDEX
@@ -72,14 +73,14 @@ bool input_edge_falling(int prev, int curr) { return prev == HIGH && curr == LOW
 bool input_edge_rising (int prev, int curr) { return prev == LOW  && curr == HIGH; }
 static inline int lvl_to_digital(bool v)    { return v ? HIGH : LOW; }
 
-// ----------------- Atomic executor-backed expander read ---------------------
+// ── Atomic executor-backed expander read ────────────────────────────────────
 //
 // CRITICAL: The entire set_all_input → read → restore_outputs → set_SD_CS
 // sequence MUST run as a single atomic operation inside the executor task.
 // If any step is done outside the executor, the GT911 touch driver can
 // interleave an I²C read between steps, leaving the CH422G stuck in input
 // mode and corrupting both the gate read and the touch read.
-// ---------------------------------------------------------------------------
+// ────────────────────────────────────────────────────────────────────────────
 
 struct full_read_ctx {
   esp_io_expander_handle_t h;
@@ -129,7 +130,6 @@ static uint8_t read_inputs_raw()
 {
     esp_io_expander_handle_t h = hal::expander_get_handle();
     if (!h) {
-        // Not ready yet; treat as all HIGH (open)
         return 0xFF;
     }
 
