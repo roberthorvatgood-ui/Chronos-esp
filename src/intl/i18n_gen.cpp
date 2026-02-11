@@ -151,7 +151,9 @@ const Entry D[] = {
  { "Download day (.zip)", "Download day (.zip)", "Preuzmi dan (.zip)", "Tag herunterladen (.zip)", "Télécharger le jour (.zip)", "Descargar día (.zip)" }, 
  { "Delete day", "Delete day", "Obriši dan", "Tag löschen", "Supprimer le jour", "Eliminar día" }, 
  { "Download", "Download", "Preuzmi", "Herunterladen", "Télécharger", "Descargar" }, 
- { "Delete", "Delete", "Obriši", "Löschen", "Supprimer", "Eliminar" } 
+ { "Delete", "Delete", "Obriši", "Löschen", "Supprimer", "Eliminar" }, 
+ { "Saved", "Saved", "Spremljeno", "Gespeichert", "Enregistré", "Guardado" },
+ { "Export failed", "Export failed", "Izvoz neuspješan", "Export fehlgeschlagen", "Échec de l'export", "Error de exportación" }
 
 };
 

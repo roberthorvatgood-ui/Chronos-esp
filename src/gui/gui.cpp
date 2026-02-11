@@ -1292,6 +1292,57 @@ static lv_obj_t* make_borderless_row(lv_obj_t* parent)
     return g;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// [2026-02-11] Export-and-reset helper with on-screen toast confirmation
+// ═════════════════════════════════════════════════════════════════���════════════
+// Shows a brief green/red toast over the current screen, then auto-deletes.
+// On success, calls the supplied reset lambda to clear the experiment state.
+
+// ══════════════════════════════════════════════════════════════════════════════
+// [2026-02-11] Export toast with i18n and project fonts
+// ══════════════════════════════════════════════════════════════════════════════
+
+static void show_export_toast(bool ok, const char* path)
+{
+    lv_obj_t* toast = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(toast, SCREEN_WIDTH - 40, 52);
+    lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, HEADER_H + 4);
+    lv_obj_set_style_radius(toast, 10, 0);
+    lv_obj_set_style_bg_color(toast, ok ? lv_color_hex(0x2E7D32) : lv_color_hex(0xC62828), 0);
+    lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(toast, 0, 0);
+    lv_obj_set_scroll_dir(toast, LV_DIR_NONE);
+    lv_obj_set_scrollbar_mode(toast, LV_SCROLLBAR_MODE_OFF);
+
+    lv_obj_t* lbl = lv_label_create(toast);
+    lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(lbl, FONT_LABEL, 0);
+
+    if (ok) {
+        const char* fname = path;
+        const char* slash = strrchr(path, '/');
+        if (slash) fname = slash + 1;
+        // tr("Saved") → "Spremi" (hr), "Gespeichert" (de), etc.
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%s: %s", tr("Saved"), fname);
+        lv_label_set_text(lbl, buf);
+    } else {
+        // tr("Export failed") → "Izvoz neuspješan" (hr), "Export fehlgeschlagen" (de), etc.
+        lv_label_set_text(lbl, tr("Export failed"));
+    }
+    lv_obj_center(lbl);
+
+    // Auto-delete after 2.5 seconds
+    lv_timer_create(
+        [](lv_timer_t* t) {
+            lv_obj_del((lv_obj_t*)t->user_data);
+            lv_timer_del(t);
+        },
+        2500,
+        toast
+    );
+}
+
 // ── Build header using LVGL Grid: [LEFT | CENTER(FR) | RIGHT] ────────────────
 
 // [2026-01-18 15:45 CET] UPDATED: build_header()
@@ -1896,29 +1947,35 @@ static void stopwatch_emit_csv(Print& out)
     }
 }
 
-
-
-// [2026-01-18 13:55 CET] UPDATED: Unified stopwatch CSV export using exportfs_save_csv()
-// Writes a real CSV file into /exp/YYYY-MM-DD and launches AP (AP+STA) for download.
 static void sw_export_csv_cb(lv_event_t*)
 {
-    // Ensure SD is mounted
     if (!chronos_sd_begin()) {
         Serial.println("[Export][Stopwatch] SD init failed");
+        show_export_toast(false, "");
         return;
     }
 
-    // Write CSV with our new emitter
     String path = chronos::exportfs_save_csv("Stopwatch", stopwatch_emit_csv);
 
     if (path.length()) {
         Serial.printf("[Export][Stopwatch] saved: %s\n", path.c_str());
+        show_export_toast(true, path.c_str());
 
-        // Start AP Web UI (AP+STA version stays non-destructive)
-        // chronos::apweb_begin() removed: AP export only via Settings WiFi Export (AP)
-    } 
-    else {
+        // Reset stopwatch after successful export
+        gApp.sw.reset();
+        sw_clear_history();
+        if (sw_time_lbl) lv_label_set_text(sw_time_lbl, "00:00.000");
+        g_armed = false;
+        if (g_sw_mode == SwGateMode::None) {
+            lv_obj_t* lbl = lv_obj_get_child(sw_btn_startstop, 0);
+            lv_obj_set_style_bg_color(sw_btn_startstop, CLR_BTN(), 0);
+            if (lbl) lv_label_set_text(lbl, tr("Start / Stop"));
+        } else {
+            set_arm_button_visual(sw_btn_startstop, false, tr("Armed"), tr("Start / Arm"));
+        }
+    } else {
         Serial.println("[Export][Stopwatch] save failed");
+        show_export_toast(false, "");
     }
 }
 
@@ -2118,12 +2175,11 @@ static void cv_reset_cb(lv_event_t*)
   update_history("CV");
 }
 
-
-// [2026-01-18 13:55 CET] UPDATED: CV CSV export using exportfs_save_csv()
 static void cv_export_cb(lv_event_t*)
 {
     if (!chronos_sd_begin()) {
         Serial.println("[Export][CV] SD init failed");
+        show_export_toast(false, "");
         return;
     }
 
@@ -2131,9 +2187,18 @@ static void cv_export_cb(lv_event_t*)
 
     if (path.length()) {
         Serial.printf("[Export][CV] saved: %s\n", path.c_str());
-        // chronos::apweb_begin() removed: AP export only via Settings WiFi Export (AP)
+        show_export_toast(true, path.c_str());
+
+        // Reset CV after successful export
+        g_armed = false;
+        set_arm_button_visual(cv_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
+        if (g_val_label) lv_label_set_text(g_val_label, "0.000 m/s");
+        if (g_formula_label) lv_label_set_text(g_formula_label, "");
+        experiments_clear_history("CV");
+        update_history("CV");
     } else {
         Serial.println("[Export][CV] save failed");
+        show_export_toast(false, "");
     }
 }
 
@@ -2259,11 +2324,11 @@ static void pg_reset_cb(lv_event_t*)
 }
 
 
-// [2026-01-18 13:55 CET] UPDATED: Photogate CSV export
 static void pg_export_cb(lv_event_t*)
 {
     if (!chronos_sd_begin()) {
         Serial.println("[Export][PG] SD init failed");
+        show_export_toast(false, "");
         return;
     }
 
@@ -2271,9 +2336,18 @@ static void pg_export_cb(lv_event_t*)
 
     if (path.length()) {
         Serial.printf("[Export][PG] saved: %s\n", path.c_str());
-        // chronos::apweb_begin() removed: AP export only via Settings WiFi Export (AP)
+        show_export_toast(true, path.c_str());
+
+        // Reset Photogate after successful export
+        g_armed = false;
+        set_arm_button_visual(pg_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
+        if (g_val_label) lv_label_set_text(g_val_label, "0.000 m/s");
+        if (g_formula_label) lv_label_set_text(g_formula_label, "");
+        experiments_clear_history("Photogate");
+        update_history("Photogate");
     } else {
         Serial.println("[Export][PG] save failed");
+        show_export_toast(false, "");
     }
 }
 
@@ -2440,12 +2514,11 @@ static void ua_reset_cb(lv_event_t*)
   update_history("UA");
 }
 
-
-// [2026-01-18 13:55 CET] UPDATED: UA CSV export
 static void ua_export_cb(lv_event_t*)
 {
     if (!chronos_sd_begin()) {
         Serial.println("[Export][UA] SD init failed");
+        show_export_toast(false, "");
         return;
     }
 
@@ -2453,10 +2526,18 @@ static void ua_export_cb(lv_event_t*)
 
     if (path.length()) {
         Serial.printf("[Export][UA] saved: %s\n", path.c_str());
-        // chronos::apweb_begin() removed: AP export only via Settings WiFi Export (AP)
-    } 
-    else {
+        show_export_toast(true, path.c_str());
+
+        // Reset UA after successful export
+        g_armed = false;
+        set_arm_button_visual(ua_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
+        experiments_clear_timestamps();
+        ua_clear_state();
+        experiments_clear_history("UA");
+        update_history("UA");
+    } else {
         Serial.println("[Export][UA] save failed");
+        show_export_toast(false, "");
     }
 }
 
@@ -2601,11 +2682,11 @@ static void ff_reset_cb(lv_event_t*)
 }
 
 
-// [2026-01-18 13:55 CET] UPDATED: FreeFall CSV export
 static void ff_export_cb(lv_event_t*)
 {
     if (!chronos_sd_begin()) {
         Serial.println("[Export][FF] SD init failed");
+        show_export_toast(false, "");
         return;
     }
 
@@ -2613,10 +2694,18 @@ static void ff_export_cb(lv_event_t*)
 
     if (path.length()) {
         Serial.printf("[Export][FF] saved: %s\n", path.c_str());
-        // chronos::apweb_begin() removed: AP export only via Settings WiFi Export (AP)
-    } 
-    else {
+        show_export_toast(true, path.c_str());
+
+        // Reset FreeFall after successful export
+        g_armed = false;
+        set_arm_button_visual(ff_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
+        if (g_val_label) lv_label_set_text(g_val_label, "0.000 m/s²");
+        if (g_formula_label) lv_label_set_text(g_formula_label, "");
+        experiments_clear_history("FreeFall");
+        update_history("FreeFall");
+    } else {
         Serial.println("[Export][FF] save failed");
+        show_export_toast(false, "");
     }
 }
 
@@ -2768,12 +2857,11 @@ static void in_reset_cb(lv_event_t*)
   update_history("Incline");
 }
 
-
-// [2026-01-18 13:55 CET] UPDATED: Incline CSV export
 static void in_export_cb(lv_event_t*)
 {
     if (!chronos_sd_begin()) {
         Serial.println("[Export][Incline] SD init failed");
+        show_export_toast(false, "");
         return;
     }
 
@@ -2781,13 +2869,20 @@ static void in_export_cb(lv_event_t*)
 
     if (path.length()) {
         Serial.printf("[Export][Incline] saved: %s\n", path.c_str());
-        // chronos::apweb_begin() removed: AP export only via Settings WiFi Export (AP)
-    } 
-    else {
+        show_export_toast(true, path.c_str());
+
+        // Reset Incline after successful export
+        g_armed = false;
+        set_arm_button_visual(in_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
+        if (g_val_label) lv_label_set_text(g_val_label, "0.000 m/s²");
+        if (g_formula_label) lv_label_set_text(g_formula_label, "");
+        experiments_clear_history("Incline");
+        update_history("Incline");
+    } else {
         Serial.println("[Export][Incline] save failed");
+        show_export_toast(false, "");
     }
 }
-
 
 static void in_settings_cb(lv_event_t*) { clear_history_for_current_screen(); gui_show_incline_settings(); }
 
@@ -2927,12 +3022,11 @@ static void ta_reset_cb(lv_event_t*)
   update_history("Tachometer");
 }
 
-
-// [2026-01-18 13:55 CET] UPDATED: Tachometer CSV export
 static void ta_export_cb(lv_event_t*)
 {
     if (!chronos_sd_begin()) {
         Serial.println("[Export][Tacho] SD init failed");
+        show_export_toast(false, "");
         return;
     }
 
@@ -2940,10 +3034,18 @@ static void ta_export_cb(lv_event_t*)
 
     if (path.length()) {
         Serial.printf("[Export][Tacho] saved: %s\n", path.c_str());
-        // chronos::apweb_begin() removed: AP export only via Settings WiFi Export (AP)
-    } 
-    else {
+        show_export_toast(true, path.c_str());
+
+        // Reset Tachometer after successful export
+        g_armed = false;
+        set_arm_button_visual(ta_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
+        if (g_val_label) lv_label_set_text(g_val_label, "0.0 RPM");
+        if (g_formula_label) lv_label_set_text(g_formula_label, "");
+        experiments_clear_history("Tachometer");
+        update_history("Tachometer");
+    } else {
         Serial.println("[Export][Tacho] save failed");
+        show_export_toast(false, "");
     }
 }
 
