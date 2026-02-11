@@ -140,6 +140,11 @@ static void sw_lap_cb(lv_event_t* e);
 static void sw_export_csv_cb(lv_event_t* e);
 static void sw_settings_cb(lv_event_t* e);
 
+// Stopwatch helper functions forward declarations
+static inline void fmt_time_ms(char* out, size_t n, uint64_t us_total);
+static void sw_record_event(LapEvent e);
+static void update_lap_history();
+
 // CV
 static void cv_arm_toggle_cb(lv_event_t* e);
 static void cv_reset_cb(lv_event_t* e);
@@ -502,6 +507,15 @@ static void cv_arm_toggle_cb(lv_event_t* e)
     set_arm_button_visual(cv_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
     experiments_clear_timestamps();   // clear timing markers; keep last result on screen
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stopwatch — Mode and State (moved here to be accessible from gui_poll_real_gate_experiments)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum class SwGateMode : uint8_t { None = 0, GateA = 1, GateAB = 2 };
+static SwGateMode g_sw_mode = SwGateMode::None;
+
+enum class LapEvent : uint8_t { Start=0, Stop=1, Lap=2 };
 
 
 // Stopwatch vars (declare ONCE)
@@ -1522,11 +1536,8 @@ static void build_measurement_labels(lv_obj_t* content, const char* initial_val)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stopwatch — Mode, Simulation, Export, Settings
+// Stopwatch — Helper functions
 // ─────────────────────────────────────────────────────────────────────────────
-
-enum class SwGateMode : uint8_t { None = 0, GateA = 1, GateAB = 2 };
-static SwGateMode g_sw_mode = SwGateMode::None;
 
 static const char* sw_mode_name(SwGateMode m)
 {
@@ -1557,7 +1568,6 @@ static void sw_mode_save(SwGateMode m)
 }
 
 // Stopwatch history with event type + raw time
-enum class LapEvent : uint8_t { Start=0, Stop=1, Lap=2 };
 struct LapEntry {
   uint32_t    num;  // absolute entry number
   std::string text; // "MM:SS.mmm"
