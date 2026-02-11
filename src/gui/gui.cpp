@@ -512,9 +512,17 @@ static void cv_arm_toggle_cb(lv_event_t* e)
 // Stopwatch — Mode and State (moved here to be accessible from gui_poll_real_gate_experiments)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Stopwatch gate modes:
+// - None: Manual mode (no gate control)
+// - GateA: Gate A toggles start/stop, Gate B records laps
+// - GateAB: Gate A starts (ignores if already running), Gate B stops (ignores if not running)
 enum class SwGateMode : uint8_t { None = 0, GateA = 1, GateAB = 2 };
 static SwGateMode g_sw_mode = SwGateMode::None;
 
+// Lap event types for stopwatch history:
+// - Start: Stopwatch started
+// - Stop: Stopwatch stopped (final time recorded)
+// - Lap: Intermediate time recorded while running
 enum class LapEvent : uint8_t { Start=0, Stop=1, Lap=2 };
 
 
