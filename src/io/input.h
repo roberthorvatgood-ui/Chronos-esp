@@ -17,7 +17,7 @@ void input_configure_pushbuttons(int select_exio = -1, int down_exio = -1, bool 
 using input_button_cb_t = void (*)(int id, bool pressed);
 void input_set_button_callback(input_button_cb_t cb);
 
-// Gate input polling pause control (call during screensaver/AP-web to reduce I²C contention)
+// Pause/resume gate polling (replaces gate_input.h)
 void input_pause();
 void input_resume();
 bool input_is_paused();

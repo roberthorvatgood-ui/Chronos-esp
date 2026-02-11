@@ -94,6 +94,7 @@ void screensaver_set_apweb_hold(bool hold)
     } else {
         // Resume gate input polling
         input_resume();
+        delay(200);  // let I²C bus settle 
         Serial.println("[Screensaver] AP-web HOLD OFF - gate polling RESUMED");
     }
 }

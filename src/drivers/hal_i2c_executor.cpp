@@ -63,9 +63,9 @@ bool hal_i2c_executor_init(size_t queue_len)
   }
   s_queue_len = queue_len;
 
-  // Create pinned task on core 1 (CHANGED from core 0)
+  // Create pinned task on core 0 (CHANGED from core 1)
   BaseType_t r = xTaskCreatePinnedToCore(i2c_executor_task, "i2c_exec", 4096, NULL,
-                                         tskIDLE_PRIORITY + 2, &s_task, 1);
+                                         tskIDLE_PRIORITY + 2, &s_task, 0);
   if (r != pdPASS) {
     ESP_LOGE(TAG, "task create failed");
     vQueueDelete(s_reqq);

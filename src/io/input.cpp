@@ -1,9 +1,11 @@
 /*****
  * input.cpp
  * Handles photogate inputs (CH422G expander) and optional pushbutton-to-gate mapping.
- * I2C expander reads are executed via the central hal_i2c_executor to avoid blocking core1/ISRs.
+ * ALL I2C expander operations are executed via the central hal_i2c_executor
+ * as a single atomic operation to prevent bus contention with GT911 touch.
  *
  * FIX (2026-02-07): Ensure CH422G is in input mode and use correct read sequence
+ * FIX (2026-02-11): Wrap entire set_all_input→read→restore cycle in one executor op
  *****/
 
 #include <Arduino.h>
@@ -13,11 +15,7 @@
 #include "../drivers/hal_i2c_executor.h"// hal_i2c_exec_sync
 #include "../drivers/hal_i2c_manager.h" // fallback mutex
 #include "../core/gate_engine.h"
-#include "../core/event_bus.h"          // EventBus for gate events
 #include "input.h"
-
-// External event bus (defined in main .ino)
-extern EventBus gBus;
 
 // Include the correct header
 #if __has_include(<port/esp_io_expander.h>)
@@ -47,8 +45,8 @@ static const unsigned long POLL_PERIOD_MS = 20; // Poll every 20ms (50Hz, safe f
 // Throttling
 static unsigned long sLastPollMs = 0;
 
-// Gate input polling pause control
-static bool gInputPaused = false;
+// Pause flag (replaces gate_input.h functionality)
+static bool sPaused = false;
 
 // Gate indices/masks
 #ifndef GATE_A_DI_INDEX
@@ -68,24 +66,59 @@ bool input_edge_falling(int prev, int curr) { return prev == HIGH && curr == LOW
 bool input_edge_rising (int prev, int curr) { return prev == LOW  && curr == HIGH; }
 static inline int lvl_to_digital(bool v)    { return v ? HIGH : LOW; }
 
-// ----------------- Executor-backed expander read ---------------------------
+// ----------------- Atomic executor-backed expander read ---------------------
+//
+// CRITICAL: The entire set_all_input → read → restore_outputs → set_SD_CS
+// sequence MUST run as a single atomic operation inside the executor task.
+// If any step is done outside the executor, the GT911 touch driver can
+// interleave an I²C read between steps, leaving the CH422G stuck in input
+// mode and corrupting both the gate read and the touch read.
+// ---------------------------------------------------------------------------
 
-struct expander_read_ctx {
+struct full_read_ctx {
   esp_io_expander_handle_t h;
-  uint32_t mask;
-  uint32_t out;
+  uint8_t snapshot;
 };
 
-// Read the CH422G input pins using get_level (which reads inputs when pins are configured as INPUT)
-static esp_err_t expander_read_op(void* vctx) {
-  if (!vctx) return ESP_ERR_INVALID_ARG;
-  expander_read_ctx* ctx = static_cast<expander_read_ctx*>(vctx);
-  if (!ctx->h) return ESP_ERR_INVALID_ARG;
-  
+static esp_err_t full_read_op(void* vctx) {
+  full_read_ctx* ctx = static_cast<full_read_ctx*>(vctx);
+  if (!ctx || !ctx->h) return ESP_ERR_INVALID_ARG;
+
+  ctx->snapshot = 0xFF;  // default: all high (safe)
+
+  // Step 1: Enable all-input mode for reading
+  esp_err_t err = esp_io_expander_ch422g_set_all_input(ctx->h);
+  if (err != ESP_OK) {
+    // Even on failure, try to restore outputs before returning
+    const uint32_t output_pins = (1u << 2) | (1u << 4);
+    esp_io_expander_set_dir(ctx->h, output_pins, IO_EXPANDER_OUTPUT);
+    esp_io_expander_set_level(ctx->h, (1u << 4), 1);
+    return err;
+  }
+
+  // Step 2: Read all pins
   uint32_t val = 0;
-  esp_err_t r = esp_io_expander_get_level(ctx->h, ctx->mask, &val);
-  if (r == ESP_OK) ctx->out = val;
-  return r;
+  err = esp_io_expander_get_level(ctx->h, 0xFF, &val);
+  if (err == ESP_OK) {
+    ctx->snapshot = static_cast<uint8_t>(val & 0xFF);
+  }
+
+  // Step 3: IMMEDIATELY restore output pins (IO2=LCD_BL, IO4=SD_CS)
+  // This MUST happen even if the read failed — otherwise LCD backlight
+  // and SD card chip-select are left floating.
+  const uint32_t output_pins = (1u << 2) | (1u << 4);
+  esp_err_t restore_err = esp_io_expander_set_dir(ctx->h, output_pins, IO_EXPANDER_OUTPUT);
+  if (restore_err != ESP_OK) {
+    Serial.printf("[Input] Warning: Failed to restore outputs: 0x%x\n", restore_err);
+  }
+
+  // Step 4: Set SD_CS high (deselect SD card)
+  restore_err = esp_io_expander_set_level(ctx->h, (1u << 4), 1);
+  if (restore_err != ESP_OK) {
+    Serial.printf("[Input] Warning: Failed to set SD_CS: 0x%x\n", restore_err);
+  }
+
+  return err;  // return the read result (step 2)
 }
 
 static uint8_t read_inputs_raw()
@@ -96,54 +129,21 @@ static uint8_t read_inputs_raw()
         return 0xFF;
     }
 
-    // Strategy: Temporarily enable all-input mode, read, then restore outputs
-    // This is necessary because CH422G doesn't support reliable mixed-mode I/O
-    
-    // Step 1: Enable all-input mode for reading
-    esp_err_t err = esp_io_expander_ch422g_set_all_input(h);
-    if (err != ESP_OK) {
-        Serial.printf("[Input] Failed to enable input mode for read: 0x%x\n", err);
-        return 0xFF;
-    }
-    
-    // Step 2: Read the input pins
-    expander_read_ctx ctx;
+    full_read_ctx ctx;
     ctx.h = h;
-    ctx.mask = 0xFF; // Read all 8 pins
-    ctx.out = 0xFF;  // Default to all high
+    ctx.snapshot = 0xFF;
 
-    err = hal_i2c_exec_sync(expander_read_op, &ctx, 300);
-    uint8_t snapshot = 0xFF;
-    
-    if (err == ESP_OK) {
-        snapshot = static_cast<uint8_t>(ctx.out & 0xFF);
-    } else {
-        // Fallback: direct read with mutex
+    esp_err_t err = hal_i2c_exec_sync(full_read_op, &ctx, 500);
+
+    if (err != ESP_OK) {
+        // Fallback: direct read with mutex (last resort)
         if (hal::i2c_lock(50)) {
-            uint32_t v = 0;
-            esp_err_t r = esp_io_expander_get_level(h, 0xFF, &v);
+            full_read_op(&ctx);  // reuse same atomic logic, just under mutex
             hal::i2c_unlock();
-            if (r == ESP_OK) {
-                snapshot = static_cast<uint8_t>(v & 0xFF);
-            }
         }
     }
-    
-    // Step 3: IMMEDIATELY restore output pins (critical for SD and LCD)
-    const uint32_t output_pins = (1u << 2) | (1u << 4);  // IO2=LCD_BL, IO4=SD_CS
-    
-    err = esp_io_expander_set_dir(h, output_pins, IO_EXPANDER_OUTPUT);
-    if (err != ESP_OK) {
-        Serial.printf("[Input] Warning: Failed to restore outputs: 0x%x\n", err);
-    }
-    
-    // Step 4: Set SD_CS high (deselect SD card)
-    err = esp_io_expander_set_level(h, (1u << 4), 1);
-    if (err != ESP_OK) {
-        Serial.printf("[Input] Warning: Failed to set SD_CS: 0x%x\n", err);
-    }
-    
-    return snapshot;
+
+    return ctx.snapshot;
 }
 
 // ----------------- Pushbutton-to-gate mapping ------------------------------
@@ -184,11 +184,6 @@ void input_configure_pushbuttons(int gateA_exio, int gateB_exio, bool active_low
 
 // ----------------- CH422G input mode setup ---------------------------------
 
-// Executor operation to set CH422G to all-input mode
-struct ch422g_set_input_ctx {
-  esp_io_expander_handle_t h;
-};
-
 static bool ensure_ch422g_input_mode() {
   if (s_ch422g_input_mode_set) return true;
   
@@ -199,6 +194,29 @@ static bool ensure_ch422g_input_mode() {
   s_ch422g_input_mode_set = true;
   Serial.println("[Input] CH422G initialized for dynamic input/output switching");
   return true;
+}
+
+// ----------------- Pause/Resume (replaces gate_input.h) --------------------
+
+void input_pause()
+{
+  if (!sPaused) {
+    sPaused = true;
+    Serial.println("[Input] Polling PAUSED");
+  }
+}
+
+void input_resume()
+{
+  if (sPaused) {
+    sPaused = false;
+    Serial.println("[Input] Polling RESUMED");
+  }
+}
+
+bool input_is_paused()
+{
+  return sPaused;
 }
 
 // ----------------- Existing API functions ----------------------------------
@@ -251,13 +269,6 @@ void input_read(Buttons& btns, int& currentA, int& currentB)
 // Main poll — called from loop()
 void input_poll_and_publish(Buttons& btns)
 {
-    // Check if polling is paused (e.g., during screensaver or AP-web)
-    if (gInputPaused) {
-        btns.prevSelect = lvl_to_digital(gGateALevel);
-        btns.prevDown   = lvl_to_digital(gGateBLevel);
-        return;
-    }
-
     unsigned long now = millis();
     if (now - sLastPollMs < POLL_PERIOD_MS) {
         btns.prevSelect = lvl_to_digital(gGateALevel);
@@ -267,6 +278,19 @@ void input_poll_and_publish(Buttons& btns)
     sLastPollMs = now;
 
     uint8_t snap = read_inputs_raw();
+
+    // Debug: only log when snapshot changes to reduce serial spam
+    static uint8_t last_logged_snap = 0xFF;
+    static bool first_log = true;
+    if (snap != last_logged_snap || first_log) {
+        Serial.printf("[DBG] snap=0x%02X btnA_last=%d cntA=%u btnB_last=%d cntB=%u gA=%d gB=%d\n",
+                      snap,
+                      sBtnA_last, sBtnA_count,
+                      sBtnB_last, sBtnB_count,
+                      gGateALevel, gGateBLevel);
+        last_logged_snap = snap;
+        first_log = false;
+    }
 
     // Determine raw samples for gates
     bool sampleA_raw = (snap & GATE_A_MASK) != 0;
@@ -324,11 +348,9 @@ void input_poll_and_publish(Buttons& btns)
             if (input_edge_falling(prev_d, curr_d)) {
                 gate_trigger(GATE_A);
                 gate_block_start(GATE_A);
-                gBus.publish(EVT_GATE_A_FALL, (uint32_t)millis());
                 Serial.printf("[GATE DBG] Gate A FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             } else if (input_edge_rising(prev_d, curr_d)) {
                 gate_block_end(GATE_A);
-                gBus.publish(EVT_GATE_A_RISE, (uint32_t)millis());
                 Serial.printf("[GATE DBG] Gate A RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             }
         }
@@ -353,11 +375,9 @@ void input_poll_and_publish(Buttons& btns)
             if (input_edge_falling(prev_d, curr_d)) {
                 gate_trigger(GATE_B);
                 gate_block_start(GATE_B);
-                gBus.publish(EVT_GATE_B_FALL, (uint32_t)millis());
                 Serial.printf("[GATE DBG] Gate B FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             } else if (input_edge_rising(prev_d, curr_d)) {
                 gate_block_end(GATE_B);
-                gBus.publish(EVT_GATE_B_RISE, (uint32_t)millis());
                 Serial.printf("[GATE DBG] Gate B RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
             }
         }
@@ -371,23 +391,4 @@ void input_poll_and_publish(Buttons& btns)
 static input_button_cb_t s_button_cb = nullptr;
 void input_set_button_callback(input_button_cb_t cb) {
     s_button_cb = cb;
-}
-
-// Gate input polling pause control functions
-void input_pause() {
-    if (!gInputPaused) {
-        gInputPaused = true;
-        Serial.println("[Input] Polling PAUSED");
-    }
-}
-
-void input_resume() {
-    if (gInputPaused) {
-        gInputPaused = false;
-        Serial.println("[Input] Polling RESUMED");
-    }
-}
-
-bool input_is_paused() {
-    return gInputPaused;
 }
