@@ -47,6 +47,9 @@ static const unsigned long POLL_PERIOD_MS = 20; // Poll every 20ms (50Hz, safe f
 // Throttling
 static unsigned long sLastPollMs = 0;
 
+// Gate input polling pause control
+static bool gInputPaused = false;
+
 // Gate indices/masks
 #ifndef GATE_A_DI_INDEX
 #define GATE_A_DI_INDEX   0
@@ -248,6 +251,13 @@ void input_read(Buttons& btns, int& currentA, int& currentB)
 // Main poll — called from loop()
 void input_poll_and_publish(Buttons& btns)
 {
+    // Check if polling is paused (e.g., during screensaver or AP-web)
+    if (gInputPaused) {
+        btns.prevSelect = lvl_to_digital(gGateALevel);
+        btns.prevDown   = lvl_to_digital(gGateBLevel);
+        return;
+    }
+
     unsigned long now = millis();
     if (now - sLastPollMs < POLL_PERIOD_MS) {
         btns.prevSelect = lvl_to_digital(gGateALevel);
@@ -374,4 +384,23 @@ void input_poll_and_publish(Buttons& btns)
 static input_button_cb_t s_button_cb = nullptr;
 void input_set_button_callback(input_button_cb_t cb) {
     s_button_cb = cb;
+}
+
+// Gate input polling pause control functions
+void input_pause() {
+    if (!gInputPaused) {
+        gInputPaused = true;
+        Serial.println("[Input] Polling PAUSED");
+    }
+}
+
+void input_resume() {
+    if (gInputPaused) {
+        gInputPaused = false;
+        Serial.println("[Input] Polling RESUMED");
+    }
+}
+
+bool input_is_paused() {
+    return gInputPaused;
 }

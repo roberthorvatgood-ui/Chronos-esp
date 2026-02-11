@@ -9,13 +9,8 @@
 #include "../drivers/hal_panel.h"
 #include "../intl/i18n.h"
 #include <lvgl.h>
-#include "../assets/welcome_screen.h" 
-
-// Include gate input control
-extern "C" {
-  void gate_input_pause();
-  void gate_input_resume();
-}
+#include "../assets/welcome_screen.h"
+#include "../io/input.h"  // input_pause, input_resume
 
 // ─────────────────────────────────────────────────────────────
 // Config macros (can override in platformio.ini or here)
@@ -89,7 +84,7 @@ void screensaver_set_apweb_hold(bool hold)
 
     if (hold) {
         // Pause gate input polling to free I²C bus for AP-web operations
-        gate_input_pause();
+        input_pause();
         
         // Immediately hide if active so AP web can safely use SD/CH422G.
         if (s_active) {
@@ -98,7 +93,7 @@ void screensaver_set_apweb_hold(bool hold)
         Serial.println("[Screensaver] AP-web HOLD ON - gate polling PAUSED");
     } else {
         // Resume gate input polling
-        gate_input_resume();
+        input_resume();
         Serial.println("[Screensaver] AP-web HOLD OFF - gate polling RESUMED");
     }
 }
@@ -175,7 +170,7 @@ void screensaver_show()
     if (s_active) return; // already shown
 
     // Pause gate input polling to reduce I²C bus contention
-    gate_input_pause();
+    input_pause();
     Serial.println("[Screensaver] Activating - gate polling PAUSED");
 
     // 1) Create overlay on lv_layer_top (always above normal screens)

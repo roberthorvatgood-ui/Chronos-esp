@@ -17,7 +17,6 @@
 #include "src/core/event_bus.h"
 #include "src/core/app_controller.h"
 #include "src/io/input.h"
-#include "src/io/gate_input.h"            // NEW: Gate input pause/resume control
 #include "src/intl/i18n.h"
 #include "src/core/gate_engine.h"
 #include "src/experiments/experiments.h"
@@ -208,7 +207,7 @@ void loop() {
   // Small delay to reduce I²C bus pressure
   // ═══════════════════════════════════════════════════════════════════════
   static unsigned long last_gate_poll_ms = 0;
-  if (!gate_input_is_paused() && (millis() - last_gate_poll_ms >= 10)) {
+  if (!input_is_paused() && (millis() - last_gate_poll_ms >= 10)) {
     static Buttons gBtns;
     input_poll_and_publish(gBtns);
     last_gate_poll_ms = millis();
@@ -247,7 +246,7 @@ void loop() {
     delay(500);
     
     // 4. Resume gate polling
-    gate_input_resume();
+    input_resume();
     
     gScreenSaverActive = false;
     gWakeFromSaverPending = false;
@@ -282,7 +281,7 @@ void loop() {
       Serial.println("[Loop] Screensaver timeout - pausing gates");
       
       // Pause gates FIRST
-      gate_input_pause();
+      input_pause();
       
       // Wait for any in-flight I²C operations to complete
       delay(100);
