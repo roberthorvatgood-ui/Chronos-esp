@@ -6,6 +6,7 @@
  *
  * FIX (2026-02-07): Ensure CH422G is in input mode and use correct read sequence
  * FIX (2026-02-11): Wrap entire set_all_input→read→restore cycle in one executor op
+ * FIX (2026-02-11): Reduce poll period to 5ms and debounce to 1 for fast gate response
  *****/
 
 #include <Arduino.h>
@@ -38,14 +39,19 @@ static uint8_t sA_count = 0, sB_count = 0;
 static bool    sA_last  = true;
 static bool    sB_last  = true;
 
-// Adjust these for testing
-static constexpr uint8_t STABLE_COUNT = 2;      // Require 2 stable samples (40ms total)
-static const unsigned long POLL_PERIOD_MS = 20; // Poll every 20ms (50Hz, safe for I²C)
+// ── Tuning ──────────────────────────────────────────────────────────────
+// STABLE_COUNT = 1  → react on the very first changed sample (no debounce).
+//   Optical gate signals are clean; mechanical bounce doesn't apply.
+// POLL_PERIOD_MS = 5 → 200 Hz I²C reads. Fast enough to catch a 10ms gate
+//   pulse while still leaving headroom for GT911 touch on Core 1.
+// ────────────────────────────────────────────────────────────────────────
+static constexpr uint8_t STABLE_COUNT = 1;
+static const unsigned long POLL_PERIOD_MS = 5;
 
 // Throttling
 static unsigned long sLastPollMs = 0;
 
-// Pause flag (replaces gate_input.h functionality)
+// Pause flag
 static bool sPaused = false;
 
 // Gate indices/masks
@@ -104,8 +110,6 @@ static esp_err_t full_read_op(void* vctx) {
   }
 
   // Step 3: IMMEDIATELY restore output pins (IO2=LCD_BL, IO4=SD_CS)
-  // This MUST happen even if the read failed — otherwise LCD backlight
-  // and SD card chip-select are left floating.
   const uint32_t output_pins = (1u << 2) | (1u << 4);
   esp_err_t restore_err = esp_io_expander_set_dir(ctx->h, output_pins, IO_EXPANDER_OUTPUT);
   if (restore_err != ESP_OK) {
@@ -196,7 +200,7 @@ static bool ensure_ch422g_input_mode() {
   return true;
 }
 
-// ----------------- Pause/Resume (replaces gate_input.h) --------------------
+// ----------------- Pause/Resume --------------------------------------------
 
 void input_pause()
 {
@@ -254,8 +258,8 @@ void input_init()
     }
 
     gate_engine_init();
-    Serial.printf("[Input] Init complete. GateA=%d, GateB=%d\n", 
-                  gGateALevel, gGateBLevel);
+    Serial.printf("[Input] Init complete. GateA=%d, GateB=%d (poll=%lums, debounce=%u)\n", 
+                  gGateALevel, gGateBLevel, POLL_PERIOD_MS, STABLE_COUNT);
 }
 
 void input_read(Buttons& btns, int& currentA, int& currentB)

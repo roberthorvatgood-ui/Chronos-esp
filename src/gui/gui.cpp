@@ -648,16 +648,6 @@ static char      s_old_value[64] = {0};
 // NEW: first-key replacement one-shot
 static bool      s_replace_on_first_key = false;
 
-static uint64_t sw_last_tsA = 0, sw_last_tsB = 0;
-static bool sw_lap_update_pending = false;
-static lv_timer_t* sw_lap_update_timer = nullptr;
-
-static void sw_lap_update_timer_cb(lv_timer_t* t) {
-    update_lap_history();
-    sw_lap_update_timer = nullptr;
-    lv_timer_del(t);
-}
-
 // Forward-declare/define once, above all uses:
 static inline void end_edit_session() {
     s_edit_ta = nullptr;
@@ -841,6 +831,26 @@ static void request_history_update(const char* mode) {
 // Called from main loop when simulation is OFF and experiment is armed.
 // Checks if gate events have completed a valid measurement and updates GUI.
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Stopwatch real-gate deferred update helpers (must precede the poll function)
+// ════════════════════════════════════════════════════════���═════════════════════
+static uint64_t sw_last_tsA = 0, sw_last_tsB = 0;
+static bool sw_lap_update_pending = false;
+static lv_timer_t* sw_lap_update_timer = nullptr;
+
+static void sw_lap_update_timer_cb(lv_timer_t* t) {
+    update_lap_history();
+    sw_lap_update_timer = nullptr;
+    lv_timer_del(t);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// [2026-02-07] Poll for experiment completion from real optical gates
+// [2026-02-11] Per-experiment throttle; stopwatch has zero throttle for speed
+// ══════════════════════════════════════════════════════════════════════════════
+// Called from main loop when simulation is OFF and experiment is armed.
+// Checks if gate events have completed a valid measurement and updates GUI.
+
 void gui_poll_real_gate_experiments() {
   unsigned long now = millis();
   
@@ -849,24 +859,23 @@ void gui_poll_real_gate_experiments() {
     return;
   }
   
-  static unsigned long last_poll_ms = 0;
-  
-  // Poll every 100ms
-  if (now - last_poll_ms < 100) return;
-  last_poll_ms = now;
-  
-  // Track last successful measurement to avoid duplicates
-  static unsigned long last_success_ms = 0;
-  
   bool success = false;
   
-  // Check which experiment screen is active and try to record
+  // Check which experiment screen is active and try to record.
+  // Each case carries its own throttle so the stopwatch can react instantly
+  // while physics experiments keep a relaxed 100ms cadence.
   switch (g_current_screen) {
+
+    // ── Physics experiments (100ms poll, 500ms dedup) ────────────────────
     case CurrentScreen::CV: {
+      static unsigned long last_cv_poll = 0;
+      if (now - last_cv_poll < 100) break;
+      last_cv_poll = now;
+      static unsigned long last_cv_ok = 0;
       double speed, time_ms;
       std::string formula;
       if (experiments_record_cv(speed, time_ms, formula)) {
-        if (now - last_success_ms > 500) {
+        if (now - last_cv_ok > 500) {
           char vbuf[48]; 
           snprintf(vbuf, sizeof(vbuf), "%.3f m/s", speed);
           if (g_val_label) {
@@ -875,10 +884,9 @@ void gui_poll_real_gate_experiments() {
           if (g_formula_label) {
             lv_label_set_text(g_formula_label, formula.c_str());
           }
-          // SAFE: Request history update via LVGL timer
           request_history_update("CV");
           Serial.printf("[GUI] CV: %.3f m/s\n", speed);
-          last_success_ms = now;
+          last_cv_ok = now;
         }
         success = true;
       }
@@ -886,10 +894,14 @@ void gui_poll_real_gate_experiments() {
     }
     
     case CurrentScreen::Photogate: {
+      static unsigned long last_pg_poll = 0;
+      if (now - last_pg_poll < 100) break;
+      last_pg_poll = now;
+      static unsigned long last_pg_ok = 0;
       double speed, time_ms;
       std::string formula;
       if (experiments_record_photogate(speed, time_ms, formula)) {
-        if (now - last_success_ms > 500) {
+        if (now - last_pg_ok > 500) {
           char vbuf[48]; 
           snprintf(vbuf, sizeof(vbuf), "%.3f m/s", speed);
           if (g_val_label) {
@@ -900,7 +912,7 @@ void gui_poll_real_gate_experiments() {
           }
           request_history_update("Photogate");
           Serial.printf("[GUI] Photogate: %.3f m/s\n", speed);
-          last_success_ms = now;
+          last_pg_ok = now;
         }
         success = true;
       }
@@ -908,10 +920,14 @@ void gui_poll_real_gate_experiments() {
     }
     
     case CurrentScreen::UA: {
+      static unsigned long last_ua_poll = 0;
+      if (now - last_ua_poll < 100) break;
+      last_ua_poll = now;
+      static unsigned long last_ua_ok = 0;
       double a, vmid, tms, v1, v2;
       std::string formula;
       if (experiments_record_ua(a, vmid, tms, formula, &v1, &v2)) {
-        if (now - last_success_ms > 500) {
+        if (now - last_ua_ok > 500) {
           char vbuf[48]; 
           snprintf(vbuf, sizeof(vbuf), "a=%.3f m/s²", a);
           if (g_val_label) {
@@ -922,7 +938,7 @@ void gui_poll_real_gate_experiments() {
           }
           request_history_update("UA");
           Serial.printf("[GUI] UA: a=%.3f m/s²\n", a);
-          last_success_ms = now;
+          last_ua_ok = now;
         }
         success = true;
       }
@@ -930,10 +946,14 @@ void gui_poll_real_gate_experiments() {
     }
     
     case CurrentScreen::FreeFall: {
+      static unsigned long last_ff_poll = 0;
+      if (now - last_ff_poll < 100) break;
+      last_ff_poll = now;
+      static unsigned long last_ff_ok = 0;
       double v_mps, g_mps2, tau_ms;
       std::string formula;
       if (experiments_record_freefall(v_mps, g_mps2, tau_ms, formula)) {
-        if (now - last_success_ms > 500) {
+        if (now - last_ff_ok > 500) {
           char vbuf[48]; 
           snprintf(vbuf, sizeof(vbuf), "g=%.3f m/s²", g_mps2);
           if (g_val_label) {
@@ -944,7 +964,7 @@ void gui_poll_real_gate_experiments() {
           }
           request_history_update("FreeFall");
           Serial.printf("[GUI] FreeFall: g=%.3f m/s²\n", g_mps2);
-          last_success_ms = now;
+          last_ff_ok = now;
         }
         success = true;
       }
@@ -952,10 +972,14 @@ void gui_poll_real_gate_experiments() {
     }
     
     case CurrentScreen::Incline: {
+      static unsigned long last_in_poll = 0;
+      if (now - last_in_poll < 100) break;
+      last_in_poll = now;
+      static unsigned long last_in_ok = 0;
       double a_mps2, v1_mps, v2_mps, total_ms;
       std::string formula;
       if (experiments_record_incline(a_mps2, v1_mps, v2_mps, total_ms, formula)) {
-        if (now - last_success_ms > 500) {
+        if (now - last_in_ok > 500) {
           char vbuf[48]; 
           snprintf(vbuf, sizeof(vbuf), "a=%.3f m/s²", a_mps2);
           if (g_val_label) {
@@ -966,7 +990,7 @@ void gui_poll_real_gate_experiments() {
           }
           request_history_update("Incline");
           Serial.printf("[GUI] Incline: a=%.3f m/s²\n", a_mps2);
-          last_success_ms = now;
+          last_in_ok = now;
         }
         success = true;
       }
@@ -974,10 +998,14 @@ void gui_poll_real_gate_experiments() {
     }
     
     case CurrentScreen::Tachometer: {
+      static unsigned long last_ta_poll = 0;
+      if (now - last_ta_poll < 100) break;
+      last_ta_poll = now;
+      static unsigned long last_ta_ok = 0;
       double rpm, period_ms;
       std::string formula;
       if (experiments_record_tacho(rpm, period_ms, formula)) {
-        if (now - last_success_ms > 500) {
+        if (now - last_ta_ok > 500) {
           char vbuf[48]; 
           snprintf(vbuf, sizeof(vbuf), "%.1f RPM", rpm);
           if (g_val_label) {
@@ -988,13 +1016,16 @@ void gui_poll_real_gate_experiments() {
           }
           request_history_update("Tacho");
           Serial.printf("[GUI] Tacho: %.1f RPM\n", rpm);
-          last_success_ms = now;
+          last_ta_ok = now;
         }
         success = true;
       }
       break;
     }
-    
+
+    // ── Stopwatch — NO throttle, NO dedup ───────────────────────────────
+    // Timestamp comparison (sw_last_tsA/B) is the only dedup needed.
+    // React as fast as loop() runs so short gate pulses are never missed.
     case CurrentScreen::Stopwatch: {
         if (g_sw_mode == SwGateMode::None) break;
 
@@ -1048,6 +1079,14 @@ void gui_poll_real_gate_experiments() {
         }
         break;
     }
+    
+    default:
+      break;
+  }
+  
+  if (success) {
+    // Clear timestamps to prevent re-recording
+    experiments_clear_timestamps();
   }
 }
 

@@ -2,6 +2,7 @@
  * Chronos – Main Application (.ino)
  * Integrated SD Export + Web UI + CH422G Pushbutton Gates
  * [Updated: 2026-02-08] Added I²C executor init and gate input pause/resume coordination
+ * [Updated: 2026-02-11] Removed loop-level gate throttle for faster response
  *****/
 
 #include <Arduino.h>
@@ -194,7 +195,7 @@ void setup() {
   Serial.println("=== CHRONOS READY ===\n");
 }
 
-// [2026-02-08] Main loop with I²C-safe CH422G polling and screensaver coordination
+// [2026-02-11] Main loop — no loop-level gate throttle; input.cpp handles its own 5ms period
 void loop() {
   // ═══════════════════════════════════════════════════════════════════════
   // Web server and network processing
@@ -203,14 +204,14 @@ void loop() {
   network_process_portal();
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Gate input polling - ONLY if not paused
-  // Small delay to reduce I²C bus pressure
+  // Gate input polling — called every loop iteration.
+  // input_poll_and_publish() has its own internal 5ms throttle so calling
+  // it more often than that is a harmless no-op.  Removing the loop-level
+  // 10ms gate reduces worst-case latency from 15ms to 5ms.
   // ═══════════════════════════════════════════════════════════════════════
-  static unsigned long last_gate_poll_ms = 0;
-  if (!input_is_paused() && (millis() - last_gate_poll_ms >= 10)) {
+  if (!input_is_paused()) {
     static Buttons gBtns;
     input_poll_and_publish(gBtns);
-    last_gate_poll_ms = millis();
   }
   
   // ═══════════════════════════════════════════════════════════════════════
@@ -218,10 +219,6 @@ void loop() {
   // ═══════════════════════════════════════════════════════════════════════
   gBus.dispatch();
   gui_poll_real_gate_experiments();
-  
-  // Note: gui_update_sim_button_colors() removed - feature deferred due to
-  // LVGL timer conflicts with I²C operations. Will implement event-driven
-  // animation in future update.
 
   // ═══════════════════════════════════════════════════════════════════════
   // Screensaver wake handling
@@ -258,7 +255,7 @@ void loop() {
   // ═══════════════════════════════════════════════════════════════════════
   // Screensaver timeout logic
   // Automatically pauses gate polling to reduce I²C bus load
-  // ══════════════════════════════════════════════════════════��════════════
+  // ═══════════════════════════════════════════════════════════════════════
   const unsigned long now = millis();
   const bool measuring        = gApp.sw.running();
   const bool experimentsArmed = gui_is_armed();
@@ -269,7 +266,7 @@ void loop() {
     // Activity detected: reset timer and ensure screen is on
     gLastUserActivityMs = now;
     if (gScreenSaverActive) {
-      screensaver_hide();  // This will resume gate polling
+      screensaver_hide();
       hal::backlight_on();
       gScreenSaverActive = false;
       Serial.println("[Loop] Screensaver hidden (activity detected)");
@@ -297,7 +294,7 @@ void loop() {
   // ═══════════════════════════════════════════════════════════════════════
   lv_timer_handler();
   
-  // Delay slightly longer (5ms instead of 2ms) to reduce I²C polling frequency
-  // and give executor task more breathing room
-  delay(5);
+  // Minimal delay — input.cpp throttles its own I²C reads at 5ms intervals,
+  // so the loop can spin faster without extra bus pressure.
+  delay(2);
 }
