@@ -20,7 +20,11 @@ enum GateID : uint8_t {
 };
 
 // ---- Lifecycle ----
-void     gate_engine_init(void);
+void     gate_engine_init(void);                // full reset (all timestamps + block ranges + flags)
+
+// ---- Targeted clears (safe to call mid-experiment) ----
+void     gate_clear_trigger_timestamps(void);   // clears only simple timestamps (CV, Photogate, FreeFall)
+void     gate_clear_block_ranges(void);         // clears only block start/end (UA, Incline)
 
 // ---- Legacy simple trigger API (kept for CV/Photogate) ----
 void     gate_trigger(GateID id);             // single timestamp (microseconds since boot)

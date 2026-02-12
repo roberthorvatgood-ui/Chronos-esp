@@ -47,7 +47,7 @@ static bool    sB_last  = true;
 //   pulse while still leaving headroom for GT911 touch on Core 1.
 // ────────────────────────────────────────────────────────────────────────
 static constexpr uint8_t STABLE_COUNT = 1;
-static const unsigned long POLL_PERIOD_MS = 5;
+static const unsigned long POLL_PERIOD_MS = 2; // was 5 → now 500 Hz
 
 // Pause flag
 static bool sPaused = false;
@@ -91,17 +91,19 @@ static esp_err_t full_read_op(void* vctx) {
   full_read_ctx* ctx = static_cast<full_read_ctx*>(vctx);
   if (!ctx || !ctx->h) return ESP_ERR_INVALID_ARG;
 
-  ctx->snapshot = 0xFF;  // default: all high (safe)
+  ctx->snapshot = 0xFF;
 
   // Step 1: Enable all-input mode for reading
   esp_err_t err = esp_io_expander_ch422g_set_all_input(ctx->h);
   if (err != ESP_OK) {
-    // Even on failure, try to restore outputs before returning
     const uint32_t output_pins = (1u << 2) | (1u << 4);
     esp_io_expander_set_dir(ctx->h, output_pins, IO_EXPANDER_OUTPUT);
     esp_io_expander_set_level(ctx->h, (1u << 4), 1);
     return err;
   }
+
+  // ── NEW: Let input pins settle after mode switch ──────────────
+  ets_delay_us(50);  // 50µs — enough for CH422G input latch
 
   // Step 2: Read all pins
   uint32_t val = 0;
@@ -110,20 +112,19 @@ static esp_err_t full_read_op(void* vctx) {
     ctx->snapshot = static_cast<uint8_t>(val & 0xFF);
   }
 
-  // Step 3: IMMEDIATELY restore output pins (IO2=LCD_BL, IO4=SD_CS)
+  // Steps 3-4 unchanged...
   const uint32_t output_pins = (1u << 2) | (1u << 4);
   esp_err_t restore_err = esp_io_expander_set_dir(ctx->h, output_pins, IO_EXPANDER_OUTPUT);
   if (restore_err != ESP_OK) {
     Serial.printf("[Input] Warning: Failed to restore outputs: 0x%x\n", restore_err);
   }
 
-  // Step 4: Set SD_CS high (deselect SD card)
   restore_err = esp_io_expander_set_level(ctx->h, (1u << 4), 1);
   if (restore_err != ESP_OK) {
     Serial.printf("[Input] Warning: Failed to set SD_CS: 0x%x\n", restore_err);
   }
 
-  return err;  // return the read result (step 2)
+  return err;
 }
 
 static uint8_t read_inputs_raw()
@@ -300,8 +301,8 @@ void input_poll_and_publish(Buttons& btns)
     bool sampleA_raw = (snap & GATE_A_MASK) != 0;
     bool sampleB_raw = (snap & GATE_B_MASK) != 0;
 
-    // If pushbutton mapped for gate A
-    if (s_btn_gateA_exio >= 0) {
+    // If pushbutton mapped for gate A — skip if same pin as gate
+    if (s_btn_gateA_exio >= 0 && s_btn_gateA_exio != GATE_A_DI_INDEX) {
       bool btn_sample = (snap & (1u << s_btn_gateA_exio)) != 0;
       if (btn_sample == sBtnA_last) {
         if (sBtnA_count < 255) sBtnA_count++;
@@ -315,8 +316,8 @@ void input_poll_and_publish(Buttons& btns)
       }
     }
 
-    // If pushbutton mapped for gate B
-    if (s_btn_gateB_exio >= 0) {
+    // If pushbutton mapped for gate B — skip if same pin as gate
+    if (s_btn_gateB_exio >= 0 && s_btn_gateB_exio != GATE_B_DI_INDEX) {
       bool btn_sample = (snap & (1u << s_btn_gateB_exio)) != 0;
       if (btn_sample == sBtnB_last) {
         if (sBtnB_count < 255) sBtnB_count++;

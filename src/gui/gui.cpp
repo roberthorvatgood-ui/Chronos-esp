@@ -859,14 +859,12 @@ void gui_poll_real_gate_experiments() {
     return;
   }
   
-  bool success = false;
-  
   // Check which experiment screen is active and try to record.
   // Each case carries its own throttle so the stopwatch can react instantly
   // while physics experiments keep a relaxed 100ms cadence.
   switch (g_current_screen) {
 
-    // ── Physics experiments (100ms poll, 500ms dedup) ────────────────────
+    // ── Physics experiments using SIMPLE TIMESTAMPS (100ms poll, 500ms dedup) ──
     case CurrentScreen::CV: {
       static unsigned long last_cv_poll = 0;
       if (now - last_cv_poll < 100) break;
@@ -888,7 +886,7 @@ void gui_poll_real_gate_experiments() {
           Serial.printf("[GUI] CV: %.3f m/s\n", speed);
           last_cv_ok = now;
         }
-        success = true;
+        gate_clear_trigger_timestamps();
       }
       break;
     }
@@ -914,33 +912,7 @@ void gui_poll_real_gate_experiments() {
           Serial.printf("[GUI] Photogate: %.3f m/s\n", speed);
           last_pg_ok = now;
         }
-        success = true;
-      }
-      break;
-    }
-    
-    case CurrentScreen::UA: {
-      static unsigned long last_ua_poll = 0;
-      if (now - last_ua_poll < 100) break;
-      last_ua_poll = now;
-      static unsigned long last_ua_ok = 0;
-      double a, vmid, tms, v1, v2;
-      std::string formula;
-      if (experiments_record_ua(a, vmid, tms, formula, &v1, &v2)) {
-        if (now - last_ua_ok > 500) {
-          char vbuf[48]; 
-          snprintf(vbuf, sizeof(vbuf), "a=%.3f m/s²", a);
-          if (g_val_label) {
-            lv_label_set_text(g_val_label, vbuf);
-          }
-          if (g_formula_label) {
-            lv_label_set_text(g_formula_label, formula.c_str());
-          }
-          request_history_update("UA");
-          Serial.printf("[GUI] UA: a=%.3f m/s²\n", a);
-          last_ua_ok = now;
-        }
-        success = true;
+        gate_clear_trigger_timestamps();
       }
       break;
     }
@@ -966,37 +938,11 @@ void gui_poll_real_gate_experiments() {
           Serial.printf("[GUI] FreeFall: g=%.3f m/s²\n", g_mps2);
           last_ff_ok = now;
         }
-        success = true;
+        gate_clear_trigger_timestamps();  // ← only clears simple timestamps, NOT block ranges
       }
       break;
     }
-    
-    case CurrentScreen::Incline: {
-      static unsigned long last_in_poll = 0;
-      if (now - last_in_poll < 100) break;
-      last_in_poll = now;
-      static unsigned long last_in_ok = 0;
-      double a_mps2, v1_mps, v2_mps, total_ms;
-      std::string formula;
-      if (experiments_record_incline(a_mps2, v1_mps, v2_mps, total_ms, formula)) {
-        if (now - last_in_ok > 500) {
-          char vbuf[48]; 
-          snprintf(vbuf, sizeof(vbuf), "a=%.3f m/s²", a_mps2);
-          if (g_val_label) {
-            lv_label_set_text(g_val_label, vbuf);
-          }
-          if (g_formula_label) {
-            lv_label_set_text(g_formula_label, formula.c_str());
-          }
-          request_history_update("Incline");
-          Serial.printf("[GUI] Incline: a=%.3f m/s²\n", a_mps2);
-          last_in_ok = now;
-        }
-        success = true;
-      }
-      break;
-    }
-    
+
     case CurrentScreen::Tachometer: {
       static unsigned long last_ta_poll = 0;
       if (now - last_ta_poll < 100) break;
@@ -1018,7 +964,62 @@ void gui_poll_real_gate_experiments() {
           Serial.printf("[GUI] Tacho: %.1f RPM\n", rpm);
           last_ta_ok = now;
         }
-        success = true;
+        gate_clear_trigger_timestamps();
+      }
+      break;
+    }
+
+    // ── Physics experiments using BLOCK RANGES (100ms poll, 500ms dedup) ──
+    case CurrentScreen::UA: {
+      static unsigned long last_ua_poll = 0;
+      if (now - last_ua_poll < 100) break;
+      last_ua_poll = now;
+      static unsigned long last_ua_ok = 0;
+      double a, vmid, tms, v1, v2;
+      std::string formula;
+      if (experiments_record_ua(a, vmid, tms, formula, &v1, &v2)) {
+        if (now - last_ua_ok > 500) {
+          char vbuf[48]; 
+          snprintf(vbuf, sizeof(vbuf), "a=%.3f m/s²", a);
+          if (g_val_label) {
+            lv_label_set_text(g_val_label, vbuf);
+          }
+          if (g_formula_label) {
+            lv_label_set_text(g_formula_label, formula.c_str());
+          }
+          request_history_update("UA");
+          Serial.printf("[GUI] UA: a=%.3f m/s²\n", a);
+          last_ua_ok = now;
+        }
+        gate_clear_trigger_timestamps();
+        gate_clear_block_ranges();
+      }
+      break;
+    }
+
+    case CurrentScreen::Incline: {
+      static unsigned long last_in_poll = 0;
+      if (now - last_in_poll < 100) break;
+      last_in_poll = now;
+      static unsigned long last_in_ok = 0;
+      double a_mps2, v1_mps, v2_mps, total_ms;
+      std::string formula;
+      if (experiments_record_incline(a_mps2, v1_mps, v2_mps, total_ms, formula)) {
+        if (now - last_in_ok > 500) {
+          char vbuf[48]; 
+          snprintf(vbuf, sizeof(vbuf), "a=%.3f m/s²", a_mps2);
+          if (g_val_label) {
+            lv_label_set_text(g_val_label, vbuf);
+          }
+          if (g_formula_label) {
+            lv_label_set_text(g_formula_label, formula.c_str());
+          }
+          request_history_update("Incline");
+          Serial.printf("[GUI] Incline: a=%.3f m/s²\n", a_mps2);
+          last_in_ok = now;
+        }
+        gate_clear_trigger_timestamps();
+        gate_clear_block_ranges();
       }
       break;
     }
@@ -1075,7 +1076,7 @@ void gui_poll_real_gate_experiments() {
                 sw_lap_update_timer = lv_timer_create(sw_lap_update_timer_cb, 10, nullptr);
                 lv_timer_set_repeat_count(sw_lap_update_timer, 1);
             }
-            experiments_clear_timestamps();
+            // Do NOT clear timestamps — sw_last_tsA/B dedup handles this.
         }
         break;
     }
@@ -1084,10 +1085,8 @@ void gui_poll_real_gate_experiments() {
       break;
   }
   
-  if (success) {
-    // Clear timestamps to prevent re-recording
-    experiments_clear_timestamps();
-  }
+  // REMOVED: the old blanket "if (success) experiments_clear_timestamps()" is gone.
+  // Each case above now clears exactly what it consumed.
 }
 
 static void on_back(lv_event_t* e) { 
