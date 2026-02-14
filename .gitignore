@@ -1,0 +1,18 @@
+# Backup files
+*.bak
+*~
+
+# Build artifacts
+*.o
+*.a
+*.elf
+*.bin
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# Temporary files
+/tmp/
+*.tmp
