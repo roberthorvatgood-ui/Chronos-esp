@@ -318,17 +318,12 @@ bool experiments_record_freefall(double& v_mps, double& g_mps2, double& tau_ms, 
     g_mps2 = (v_mps * v_mps) / (2.0 * h_eff_m);
 
     char buf[320];
-    // NOTE: "\xE2\x89\x88" is U+2248 (ALMOST EQUAL TO "≈") in UTF-8
-    // NOTE: "\xCF\x84" is U+03C4 (Greek lowercase tau "τ") in UTF-8
-    // NOTE: "\xC2\xB2" is U+00B2 (superscript two "²") in UTF-8
+    // NOTE: "\xE2\x89\x88" is U+2248 (ALMOST EQUAL TO “≈”) in UTF-8
     snprintf(buf, sizeof(buf),
-             "%s\nL=%u mm, h=%u mm, h_eff=%.1f mm\n\xCF\x84=%d %s\nv=%.3f %s, g=%.3f %s",
-             tr("Free Fall: v = L / \xCF\x84, g \xE2\x89\x88 v\xC2\xB2 / (2 h_eff)"),
+             "%s\nL=%u mm, h=%u mm\nτ=%d %s",
+             tr("Free Fall: v = L / τ, g \xE2\x89\x88 v^2 / (2 h)"),
              (unsigned)s_ff_len_mm, (unsigned)s_ff_drop_mm,
-             h_eff_m * 1000.0,
-             (int)tau_ms, tr("ms"),
-             v_mps, tr("m/s"),
-             g_mps2, tr("m/s\xC2\xB2"));
+             (int)tau_ms, tr("ms"));
     formula.assign(buf);
 
     Run r = {"FreeFall", ++s_run_ff, (double)s_ff_drop_mm, tau_ms, v_mps, g_mps2, 0.0,
