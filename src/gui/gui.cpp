@@ -2785,8 +2785,9 @@ void gui_show_freefall()
   lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
   lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
 
-  g_sim_btn_a = make_sim_btn(sim_row, tr("Gate A"), sim_ff_gate_a);
-  g_sim_btn_b = make_sim_btn(sim_row, tr("Gate B"), sim_ff_gate_b);
+  // Note: Free Fall uses "Block"/"Unblock" (one gate) but maps to Gate A/B internally
+  g_sim_btn_a = make_sim_btn(sim_row, tr("Block"),   sim_ff_gate_a);
+  g_sim_btn_b = make_sim_btn(sim_row, tr("Unblock"), sim_ff_gate_b);
   lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
   lv_obj_align(g_sim_btn_b, LV_ALIGN_LEFT_MID, 160, 0);
   topOffset += SIMROW_H;
