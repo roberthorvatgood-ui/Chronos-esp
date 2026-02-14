@@ -8,6 +8,7 @@
  * FIX (2026-02-11): Wrap entire set_all_input→read→restore cycle in one executor op
  * FIX (2026-02-11): Reduce poll period to 5ms and debounce to 1 for fast gate response
  * FIX (2026-02-11): Atomic full_read_op — eliminates GT911 touch interleaving
+ * FIX (2026-02-14): Only record gate events when experiment is ARMED or RUNNING
  *****/
 
 #include <Arduino.h>
@@ -17,6 +18,7 @@
 #include "../drivers/hal_i2c_executor.h"// hal_i2c_exec_sync
 #include "../drivers/hal_i2c_manager.h" // fallback mutex
 #include "../core/gate_engine.h"
+#include "../experiments/experiments.h" // experiment_should_poll_gates()
 #include "input.h"
 
 // Include the correct header
@@ -350,13 +352,23 @@ void input_poll_and_publish(Buttons& btns)
             int prev_d = lvl_to_digital(prev);
             int curr_d = lvl_to_digital(sampleA);
 
-            if (input_edge_falling(prev_d, curr_d)) {
-                gate_trigger(GATE_A);
-                gate_block_start(GATE_A);
-                Serial.printf("[GATE DBG] Gate A FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
-            } else if (input_edge_rising(prev_d, curr_d)) {
-                gate_block_end(GATE_A);
-                Serial.printf("[GATE DBG] Gate A RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
+            // Only record gate events when experiment is ARMED or RUNNING
+            if (experiment_should_poll_gates()) {
+                if (input_edge_falling(prev_d, curr_d)) {
+                    gate_trigger(GATE_A);
+                    gate_block_start(GATE_A);
+                    Serial.printf("[GATE DBG] Gate A FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
+                } else if (input_edge_rising(prev_d, curr_d)) {
+                    gate_block_end(GATE_A);
+                    Serial.printf("[GATE DBG] Gate A RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
+                }
+            } else {
+                // Log ignored events for debugging
+                if (input_edge_falling(prev_d, curr_d)) {
+                    Serial.printf("[GATE DBG] Gate A FALLING (BLOCK) - IGNORED (not armed): prev=%d curr=%d\n", prev_d, curr_d);
+                } else if (input_edge_rising(prev_d, curr_d)) {
+                    Serial.printf("[GATE DBG] Gate A RISING (UNBLOCK) - IGNORED (not armed): prev=%d curr=%d\n", prev_d, curr_d);
+                }
             }
         }
     }
@@ -377,13 +389,23 @@ void input_poll_and_publish(Buttons& btns)
             int prev_d = lvl_to_digital(prev);
             int curr_d = lvl_to_digital(sampleB);
 
-            if (input_edge_falling(prev_d, curr_d)) {
-                gate_trigger(GATE_B);
-                gate_block_start(GATE_B);
-                Serial.printf("[GATE DBG] Gate B FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
-            } else if (input_edge_rising(prev_d, curr_d)) {
-                gate_block_end(GATE_B);
-                Serial.printf("[GATE DBG] Gate B RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
+            // Only record gate events when experiment is ARMED or RUNNING
+            if (experiment_should_poll_gates()) {
+                if (input_edge_falling(prev_d, curr_d)) {
+                    gate_trigger(GATE_B);
+                    gate_block_start(GATE_B);
+                    Serial.printf("[GATE DBG] Gate B FALLING (BLOCK): prev=%d curr=%d\n", prev_d, curr_d);
+                } else if (input_edge_rising(prev_d, curr_d)) {
+                    gate_block_end(GATE_B);
+                    Serial.printf("[GATE DBG] Gate B RISING (UNBLOCK): prev=%d curr=%d\n", prev_d, curr_d);
+                }
+            } else {
+                // Log ignored events for debugging
+                if (input_edge_falling(prev_d, curr_d)) {
+                    Serial.printf("[GATE DBG] Gate B FALLING (BLOCK) - IGNORED (not armed): prev=%d curr=%d\n", prev_d, curr_d);
+                } else if (input_edge_rising(prev_d, curr_d)) {
+                    Serial.printf("[GATE DBG] Gate B RISING (UNBLOCK) - IGNORED (not armed): prev=%d curr=%d\n", prev_d, curr_d);
+                }
             }
         }
     }
