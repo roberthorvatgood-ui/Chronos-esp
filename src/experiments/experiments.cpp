@@ -216,13 +216,18 @@ bool experiments_record_cv(double& speed_mps, double& time_ms, std::string& form
 }
 
 // ================= Photogate =================
+// [Updated: 2026-02-14] Changed to use Gate A block range only (single gate)
 bool experiments_record_photogate(double& speed_mps, double& time_ms, std::string& formula)
 {
-  uint64_t tA = gate_timestamp(GateID::GATE_A);
-  uint64_t tB = gate_timestamp(GateID::GATE_B);
-  if (tA == 0 || tB == 0 || tB <= tA) return false;
-  time_ms   = (tB - tA) / 1000.0;
+  // Get block start and end times from Gate A only
+  uint64_t t_start, t_end;
+  if (!gate_get_last_block_range_us(GateID::GATE_A, t_start, t_end)) return false;
+  
+  time_ms = (t_end - t_start) / 1000.0;
+  if (time_ms <= 0) return false;
+  
   speed_mps = (double)s_flag_mm / time_ms; // mm/ms == m/s
+  
   char buf[192];
   snprintf(buf, sizeof(buf),
     "%s\n%s = %u mm\n%s = %d %s\n%s = %.3f %s",
@@ -300,11 +305,11 @@ bool experiments_record_ua(double& acc_mps2,
 // [Updated: 2026-01-17 16:22:00 CET] Reason: Use explicit UTF-8 escape for “≈” to avoid encoding issues
 bool experiments_record_freefall(double& v_mps, double& g_mps2, double& tau_ms, std::string& formula)
 {
-    uint64_t tA = gate_timestamp(GateID::GATE_A);
-    uint64_t tB = gate_timestamp(GateID::GATE_B);
-    if (tA == 0 || tB == 0 || tB <= tA) return false;
+    // Get block start and end times from Gate A only
+    uint64_t t_start, t_end;
+    if (!gate_get_last_block_range_us(GateID::GATE_A, t_start, t_end)) return false;
 
-    tau_ms = (tB - tA) / 1000.0;
+    tau_ms = (t_end - t_start) / 1000.0;
     if (tau_ms <= 0) return false;
 
     const double L_mm = (double)s_ff_len_mm;

@@ -23,14 +23,14 @@ enum GateID : uint8_t {
 void     gate_engine_init(void);                // full reset (all timestamps + block ranges + flags)
 
 // ---- Targeted clears (safe to call mid-experiment) ----
-void     gate_clear_trigger_timestamps(void);   // clears only simple timestamps (CV, Photogate, FreeFall)
-void     gate_clear_block_ranges(void);         // clears only block start/end (UA, Incline)
+void     gate_clear_trigger_timestamps(void);   // clears only simple timestamps (CV only)
+void     gate_clear_block_ranges(void);         // clears only block start/end (Photogate, FreeFall, UA, Incline)
 
-// ---- Legacy simple trigger API (kept for CV/Photogate) ----
+// ---- Legacy simple trigger API (kept for CV only) ----
 void     gate_trigger(GateID id);             // single timestamp (microseconds since boot)
 uint64_t gate_timestamp(GateID id);           // read last single timestamp
 
-// ---- Block/unblock capture API for two‑gate UA ----
+// ---- Block/unblock capture API for single and two-gate experiments ----
 // Call at the light beam "block" (front edge)
 void     gate_block_start(GateID id);
 // Call at the light beam "unblock" (rear edge)

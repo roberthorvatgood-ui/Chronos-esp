@@ -5,14 +5,14 @@
 /**
  * Gate Engine Implementation
  * --------------------------
- * 1) Legacy single-timestamp path (A/B/C) used by CV/Photogate/FreeFall screens.
- * 2) Per-gate block range capture (start/end) used by two‑gate UA/Incline.
+ * 1) Legacy single-timestamp path (A/B/C) used by CV screen only.
+ * 2) Per-gate block range capture (start/end) used by Photogate, FreeFall, UA, and Incline.
  * 3) Gate state tracking for GUI animation (ISR-safe flags).
  *
  * IMPORTANT: experiments_clear_timestamps() used to call gate_engine_init()
  * which nuked everything. Now experiments should call the targeted clears:
- *   - gate_clear_trigger_timestamps()  for CV/Photogate/FreeFall
- *   - gate_clear_block_ranges()        for UA/Incline
+ *   - gate_clear_trigger_timestamps()  for CV
+ *   - gate_clear_block_ranges()        for Photogate/FreeFall/UA/Incline
  * gate_engine_init() is reserved for full system reset only.
  */
 

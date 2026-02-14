@@ -2318,7 +2318,7 @@ static void pg_arm_toggle_cb(lv_event_t*)
   }
 
   set_arm_button_visual(pg_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
-  experiments_clear_timestamps();
+  gate_clear_block_ranges();  // Photogate uses block range API for Gate A
 }
 static void pg_reset_cb(lv_event_t*)
 {
@@ -2369,25 +2369,26 @@ static void pg_export_cb(lv_event_t*)
 // Reason: experiments_record_photogate() reads gate_timestamp(GATE_A/B),
 // so we must simulate Block→A and Unblock→B via gate_simulate_block()/unblock().
 
+// [Updated: 2026-02-14] Changed to use Gate A block range API
 static void sim_pg_block(lv_event_t* /*e*/)
 {
     if (!g_sim_enabled || !g_armed) return;
-
-    // Legacy mapping for Photogate: Block -> Gate A timestamp
-    gate_simulate_block(); // sets gate_timestamp(GATE_A)
+    
+    // Start blocking Gate A
+    gate_simulate_block_a();  // calls gate_block_start(GATE_A)
 }
 
 static void sim_pg_unblock(lv_event_t* /*e*/)
 {
     if (!g_sim_enabled || !g_armed) return;
+    
+    // End blocking Gate A
+    gate_simulate_unblock_a();  // calls gate_block_end(GATE_A)
 
-    // Legacy mapping for Photogate: Unblock -> Gate B timestamp
-    gate_simulate_unblock(); // sets gate_timestamp(GATE_B)
-
-    // Now compute & paint result using the legacy A/B timestamps
+    // Now compute & paint result using Gate A block range
     double v_mps = 0.0, t_ms = 0.0;
     std::string formula;
-    if (experiments_record_photogate(v_mps, t_ms, formula)) {  // uses gate_timestamp(A/B)
+    if (experiments_record_photogate(v_mps, t_ms, formula)) {  // uses gate_get_last_block_range_us(GATE_A)
         char big[64];  snprintf(big, sizeof(big), "%.3f m/s", v_mps);
         if (g_val_label)     { lv_label_set_text(g_val_label, big); lv_obj_invalidate(g_val_label); }
         if (g_formula_label) { lv_label_set_text(g_formula_label, formula.c_str()); lv_obj_invalidate(g_formula_label); }
@@ -2428,7 +2429,7 @@ void gui_show_photogate()
   lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
   lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
 
-  // Note: Photogate uses "Block"/"Unblock" but maps to Gate A/B internally
+  // Note: Photogate uses "Block"/"Unblock" - both operate on Gate A using block range API
   g_sim_btn_a = make_sim_btn(sim_row, tr("Block"),   sim_pg_block);
   g_sim_btn_b = make_sim_btn(sim_row, tr("Unblock"), sim_pg_unblock);
   lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
@@ -2676,7 +2677,7 @@ static void ff_arm_toggle_cb(lv_event_t*)
   }
 
   set_arm_button_visual(ff_btn_arm, g_armed, tr("Armed"), tr("Start / Arm"));
-  experiments_clear_timestamps();
+  gate_clear_block_ranges();  // Free Fall uses block range API for Gate A
 }
 static void ff_reset_cb(lv_event_t*)
 {
@@ -2720,13 +2721,16 @@ static void ff_export_cb(lv_event_t*)
 
 
 // [2026-01-18 21:24 CET] ADD: Free Fall simulation + settings callback (linker fix)
+// [Updated: 2026-02-14] Changed to use Gate A block range API
 static void sim_ff_gate_a(lv_event_t* /*e*/)
 {
     if (!g_sim_enabled || !g_armed) return;
-    gate_simulate_gate_a();
+    // Start blocking Gate A
+    gate_simulate_block_a();  // calls gate_block_start(GATE_A)
 }
 
 
+// [Updated: 2026-02-14] Changed to use Gate A block range API
 // [2026-01-26 21:10 CET] FIX: Free Fall simulation now computes & paints results
 // [2026-01-26 21:22 CET] FIX: Free Fall — big label shows v and g; small label shows tau + formula
 // [2026-01-26 21:28 CET] FIX: Free Fall — big label shows v & g; small shows tau + formula
@@ -2734,11 +2738,12 @@ static void sim_ff_gate_b(lv_event_t* /*e*/)
 {
     if (!g_sim_enabled || !g_armed) return;
 
-    gate_simulate_gate_b();  // complete the simulated measurement
+    // End blocking Gate A
+    gate_simulate_unblock_a();  // calls gate_block_end(GATE_A)
 
     double v_mps = 0.0, g_mps2 = 0.0, tau_ms = 0.0;
     std::string formula;
-    if (experiments_record_freefall(v_mps, g_mps2, tau_ms, formula)) {
+    if (experiments_record_freefall(v_mps, g_mps2, tau_ms, formula)) {  // uses gate_get_last_block_range_us(GATE_A)
         // BIG: v and g on the same line (ASCII units to avoid encoding issues)
         char big[96];
         snprintf(big, sizeof(big), "v=%.3f m/s g=%.3f m/s2", v_mps, g_mps2);
@@ -2785,7 +2790,7 @@ void gui_show_freefall()
   lv_obj_set_scroll_dir(sim_row, LV_DIR_NONE);
   lv_obj_set_scrollbar_mode(sim_row, LV_SCROLLBAR_MODE_OFF);
 
-  // Note: Free Fall uses "Block"/"Unblock" (one gate) but maps to Gate A/B internally
+  // Note: Free Fall uses "Block"/"Unblock" - both operate on Gate A using block range API
   g_sim_btn_a = make_sim_btn(sim_row, tr("Block"),   sim_ff_gate_a);
   g_sim_btn_b = make_sim_btn(sim_row, tr("Unblock"), sim_ff_gate_b);
   lv_obj_align(g_sim_btn_a, LV_ALIGN_LEFT_MID, 20, 0);
