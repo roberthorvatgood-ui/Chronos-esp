@@ -899,6 +899,9 @@ void gui_poll_real_gate_experiments() {
       double speed, time_ms;
       std::string formula;
       if (experiments_record_photogate(speed, time_ms, formula)) {
+        // Successfully got measurement - clear data immediately to prevent re-processing
+        gate_clear_block_ranges();
+        
         if (now - last_pg_ok > 500) {
           char vbuf[48]; 
           snprintf(vbuf, sizeof(vbuf), "%.3f m/s", speed);
@@ -912,7 +915,6 @@ void gui_poll_real_gate_experiments() {
           Serial.printf("[GUI] Photogate: %.3f m/s\n", speed);
           last_pg_ok = now;
         }
-        gate_clear_trigger_timestamps();
       }
       break;
     }
@@ -925,6 +927,9 @@ void gui_poll_real_gate_experiments() {
       double v_mps, g_mps2, tau_ms;
       std::string formula;
       if (experiments_record_freefall(v_mps, g_mps2, tau_ms, formula)) {
+        // Successfully got measurement - clear data immediately to prevent re-processing
+        gate_clear_block_ranges();
+        
         if (now - last_ff_ok > 500) {
           char vbuf[48]; 
           snprintf(vbuf, sizeof(vbuf), "g=%.3f m/s²", g_mps2);
@@ -938,7 +943,6 @@ void gui_poll_real_gate_experiments() {
           Serial.printf("[GUI] FreeFall: g=%.3f m/s²\n", g_mps2);
           last_ff_ok = now;
         }
-        gate_clear_trigger_timestamps();  // ← only clears simple timestamps, NOT block ranges
       }
       break;
     }
