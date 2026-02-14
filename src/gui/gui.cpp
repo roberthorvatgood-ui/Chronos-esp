@@ -964,7 +964,7 @@ void gui_poll_real_gate_experiments() {
           if (g_formula_label) {
             lv_label_set_text(g_formula_label, formula.c_str());
           }
-          request_history_update("Tacho");
+          request_history_update("Tachometer");
           Serial.printf("[GUI] Tacho: %.1f RPM\n", rpm);
           last_ta_ok = now;
         }

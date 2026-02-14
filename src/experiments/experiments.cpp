@@ -76,6 +76,7 @@ static std::vector<Run> runs_ff;
 static std::vector<Run> runs_incl;
 static std::vector<Run> runs_tacho;
 static uint32_t s_run_cv=0, s_run_pg=0, s_run_ua=0, s_run_ff=0, s_run_incl=0, s_run_ta=0;
+static uint64_t s_tacho_prevA = 0;
 
 static std::string human_time() {
   unsigned long ms = millis();
@@ -187,6 +188,7 @@ void experiments_init() {
   runs_cv.clear(); runs_pg.clear(); runs_ua.clear();
   runs_ff.clear(); runs_incl.clear(); runs_tacho.clear();
   s_run_cv = s_run_pg = s_run_ua = s_run_ff = s_run_incl = s_run_ta = 0;
+  s_tacho_prevA = 0;
   load_settings();
 }
 void experiments_clear_timestamps() { gate_engine_init(); }
@@ -424,11 +426,10 @@ bool experiments_record_incline(double& a_mps2,
 // ================= Tachometer =================
 bool experiments_record_tacho(double& rpm, double& period_ms, std::string& formula)
 {
-  static uint64_t prevA = 0;
   uint64_t tA = gate_timestamp(GateID::GATE_A);
   if (tA == 0) return false;
-  if (prevA == 0) { prevA = tA; return false; }
-  uint64_t dt = tA - prevA; prevA = tA;
+  if (s_tacho_prevA == 0) { s_tacho_prevA = tA; return false; }
+  uint64_t dt = tA - s_tacho_prevA; s_tacho_prevA = tA;
 
   period_ms = dt / 1000.0;
   if (period_ms <= 0) return false;
@@ -510,7 +511,7 @@ void experiments_clear_history(const char* mode)
   else if (strcmp(mode, "UA") == 0)       { runs_ua.clear(); s_run_ua = 0; }
   else if (strcmp(mode, "FreeFall") == 0) { runs_ff.clear(); s_run_ff = 0; }
   else if (strcmp(mode, "Incline") == 0)  { runs_incl.clear(); s_run_incl = 0; }
-  else if (strcmp(mode, "Tachometer") == 0){runs_tacho.clear(); s_run_ta = 0; }
+  else if (strcmp(mode, "Tachometer") == 0){runs_tacho.clear(); s_run_ta = 0; s_tacho_prevA = 0; }
 }
 
 
