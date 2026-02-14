@@ -125,7 +125,7 @@ static void load_settings() {
     s_ff_drop_mm    = prefs.getUShort("ff_drop_mm", 500);
     s_in_len_mm     = prefs.getUShort("in_len_mm", 50);
     s_in_dist_mm    = prefs.getUShort("in_dist_mm", 500);
-    s_in_angle_deg  = prefs.getFloat ("in_ang_deg", 10.0f);
+    s_in_angle_deg  = prefs.getUShort("in_ang_deg", 10);
     s_tacho_slots   = prefs.getUShort("tacho_slots", 1);
     prefs.end();
   }
@@ -143,7 +143,7 @@ static void save_settings() {
     prefs.putUShort("ff_drop_mm", s_ff_drop_mm);
     prefs.putUShort("in_len_mm", s_in_len_mm);
     prefs.putUShort("in_dist_mm", s_in_dist_mm);
-    prefs.putFloat ("in_ang_deg", s_in_angle_deg);
+    prefs.putUShort("in_ang_deg", s_in_angle_deg);
     prefs.putUShort("tacho_slots", s_tacho_slots);
     prefs.end();
   }
@@ -378,7 +378,7 @@ bool experiments_record_incline(double& a_mps2,
     char header[128];
     snprintf(header, sizeof(header), tr("Inclined Plane: L=%u mm, D=%u mm, %s=%u°"),
              (unsigned)s_in_len_mm, (unsigned)s_in_dist_mm,
-             tr("Incline angle (deg):"), (double)s_in_angle_deg);
+             tr("Incline angle (deg):"), (unsigned)s_in_angle_deg);
 
     char v1line[64]; snprintf(v1line, sizeof(v1line), tr("v1 = L / τA = %.3f"), v1_mps);
     char v2line[64]; snprintf(v2line, sizeof(v2line), tr("v2 = L / τB = %.3f"), v2_mps);
