@@ -1883,6 +1883,13 @@ static void sw_startstop_cb(lv_event_t*)
     } else {
         experiment_set_state(ExperimentState::IDLE);
     }
+
+    // ── Clear stale gate timestamps on arm so pre-arm events don't auto-start ──
+    if (g_armed) {
+        gate_clear_trigger_timestamps();   // wipe any latched Gate A/B timestamps
+        sw_last_tsA = 0;                   // reset dedup trackers
+        sw_last_tsB = 0;
+    }
     
     set_arm_button_visual(sw_btn_startstop, g_armed, tr("Armed"), tr("Start / Arm"));
     if (!g_armed && gApp.sw.running()) {
@@ -1912,6 +1919,9 @@ static void sw_reset_cb(lv_event_t*)
   
   // Set experiment state to IDLE when resetting
   experiment_set_state(ExperimentState::IDLE);
+  
+  sw_last_tsA = 0;
+  sw_last_tsB = 0;
   
   if (g_sw_mode == SwGateMode::None) {
     lv_obj_t* lbl = lv_obj_get_child(sw_btn_startstop, 0);
