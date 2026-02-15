@@ -1694,8 +1694,7 @@ static void handle_list() {
     if (body.isEmpty()) body = "{\"dates\":[]}";
     s_server->send(200, "application/json", body);
     s_list_busy = false;
-    LOG_I("WEB", "/api/list requested");
-    LOG_I("WEB", "/api/list responded (%u bytes)", body.length());
+    LOG_I("WEB", "/api/list completed (%u bytes)", body.length());
 }
 
 static void handle_rm() {
@@ -1924,7 +1923,7 @@ static void handle_log_level() {
             s_server->send(200, "application/json", resp);
             LOG_I("WEB", "/api/log/level set=%d", newLevel);
         } else {
-            s_server->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid level\"}");
+            s_server->send(400, "application/json", "{\"ok\":false,\"err\":\"invalid level\"}");
         }
     } else {
         // Return current level
