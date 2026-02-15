@@ -29,6 +29,7 @@
 #include "src/export/export_fs.h"
 #include "src/export/chronos_sd.h"
 #include "src/export/web_export.h"
+#include "src/export/app_log.h"
 
 namespace chronos { bool apweb_fs_busy(); }
 
@@ -133,12 +134,26 @@ void setup() {
   // Export system: mount SD & start Web UI (AP mode)
   // SD operations now protected by I²C executor when accessing CH422G CS pin
   // ═══════════════════════════════════════════════════════════════════════
-  if (!chronos_sd_begin()) {
+  bool sd_ok = chronos_sd_begin();
+  if (!sd_ok) {
     Serial.println("[Export] SD init failed — export UI will still start, but listing will be empty.");
   }
   
+  // Initialize logging system right after SD mount
+  if (sd_ok) {
+    applog_init();
+  }
+  
+  // Log boot information
+  LOG_I("BOOT", "Firmware built %s %s", __DATE__, __TIME__);
+  LOG_I("BOOT", "Wi-Fi pref: %s", wifi_on ? "ON" : "OFF");
+  LOG_I("BOOT", "SD: %s", sd_ok ? "OK" : "FAIL");
+  LOG_I("BOOT", "Language: %s", i18n_get_lang_code());
+  LOG_I("BOOT", "Screensaver timeout: %lu s", (unsigned long)gScreenSaverTimeoutS);
+  
   // Start AP + Web UI (will trigger screensaver pause via apweb hold)
   chronos::apweb_begin("Chronos-AP", "chronos123");
+  LOG_I("BOOT", "AP Web started");
 
   // ═══════════════════════════════════════════════════════════════════════
   // Splash screen or main menu
@@ -159,6 +174,8 @@ void setup() {
 
   // Initialize input system (will set CH422G to input mode and configure debounce)
   input_init();
+  
+  LOG_I("BOOT", "Gate inputs configured");
 
   // Subscribe to event bus
   gBus.subscribe(&onBusEvent);
@@ -177,6 +194,9 @@ void setup() {
   struct tm t {};
   rtc_get_time(t);
   if ((t.tm_year + 1900) >= 2024) {
+    LOG_I("RTC", "Time: %d-%02d-%02d %02d:%02d:%02d", 
+          t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, 
+          t.tm_hour, t.tm_min, t.tm_sec);
     bool os = true;
     if (pcf_rtc_get_os_flag(os) && os) {
       pcf_rtc_clear_os_flag();
@@ -193,6 +213,7 @@ void setup() {
   gLastUserActivityMs = millis();
   
   Serial.println("=== CHRONOS READY ===\n");
+  LOG_I("BOOT", "CHRONOS READY (heap: %u)", ESP.getFreeHeap());
 }
 
 // [2026-02-11] Main loop — no loop-level gate throttle; input.cpp handles its own 5ms period
@@ -227,6 +248,7 @@ void loop() {
     gWakeInProgress = true;
     
     Serial.println("[Screensaver] Wake requested - keeping gates paused during backlight");
+    LOG_I("SAVER", "Wake requested");
     
     // 1. Hide screensaver overlay (keeps gate polling paused)
     screensaver_hide();
@@ -250,6 +272,7 @@ void loop() {
     gWakeInProgress = false;
     
     Serial.println("[Screensaver] Wake complete");
+    LOG_I("SAVER", "Wake complete");
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -276,6 +299,7 @@ void loop() {
     const unsigned long timeout_ms = (unsigned long)gScreenSaverTimeoutS * 1000UL;
     if (!gScreenSaverActive && (now - gLastUserActivityMs >= timeout_ms)) {
       Serial.println("[Loop] Screensaver timeout - pausing gates");
+      LOG_I("SAVER", "Timeout — entering screensaver");
       
       // Pause gates FIRST
       input_pause();

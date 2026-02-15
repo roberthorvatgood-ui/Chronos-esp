@@ -19,6 +19,7 @@
 #include "../drivers/hal_i2c_manager.h" // fallback mutex
 #include "../core/gate_engine.h"
 #include "../experiments/experiments.h" // experiment_should_poll_gates()
+#include "../export/app_log.h"
 #include "input.h"
 
 // Include the correct header
@@ -351,6 +352,8 @@ void input_poll_and_publish(Buttons& btns)
 
             int prev_d = lvl_to_digital(prev);
             int curr_d = lvl_to_digital(sampleA);
+            
+            LOG_D("GATE", "A: %s", gGateALevel ? "OPEN" : "BLOCKED");
 
             // Only record gate events when experiment is ARMED or RUNNING
             if (experiment_should_poll_gates()) {
@@ -388,6 +391,8 @@ void input_poll_and_publish(Buttons& btns)
 
             int prev_d = lvl_to_digital(prev);
             int curr_d = lvl_to_digital(sampleB);
+            
+            LOG_D("GATE", "B: %s", gGateBLevel ? "OPEN" : "BLOCKED");
 
             // Only record gate events when experiment is ARMED or RUNNING
             if (experiment_should_poll_gates()) {

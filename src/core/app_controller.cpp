@@ -3,6 +3,7 @@
 #include "app_controller.h"
 #include "event_bus.h"
 #include "../gui/gui.h"
+#include "../export/app_log.h"
 
 // Stopwatch gate mode values (must match SwGateMode enum in gui.cpp)
 // Defined here as constants to avoid header coupling.
@@ -31,16 +32,19 @@ void AppController::enter_mode() {
   if (idx >= MODE_COUNT) idx = 0;
   Serial.printf("[AppController] enter_mode -> idx=%u, fn=%p\n",
                 (unsigned)idx, (void*)MODE_ROUTES[idx]);
+  LOG_I("MODE", "enter_mode -> idx=%u", (unsigned)idx);
   MODE_ROUTES[idx]();  // call the function pointer
 }
 
 void AppController::next_mode() {
   startIndex = (uint8_t)((startIndex + 1) % MODE_COUNT);
+  LOG_I("MODE", "next_mode -> idx=%u", (unsigned)startIndex);
   MODE_ROUTES[startIndex]();  // call it
 }
 
 void AppController::prev_mode() {
   startIndex = (uint8_t)((startIndex + MODE_COUNT - 1) % MODE_COUNT);
+  LOG_I("MODE", "prev_mode -> idx=%u", (unsigned)startIndex);
   MODE_ROUTES[startIndex]();  // call it
 }
 
@@ -64,10 +68,12 @@ void AppController::on_event(const Event& e) {
           this->sw.start();
           gui_sw_record_start();
           Serial.println("[Stopwatch] Gate A: Started");
+          LOG_I("SW", "Gate A: Started");
         } else {
           this->sw.stop();
           gui_sw_record_stop();
           Serial.println("[Stopwatch] Gate A: Stopped");
+          LOG_I("SW", "Gate A: Stopped");
         }
       } else if (mode == SW_MODE_GATE_AB) {
         // Gate A+B mode: start on Gate A
@@ -75,10 +81,12 @@ void AppController::on_event(const Event& e) {
           this->sw.start();
           gui_sw_record_start();
           Serial.println("[Stopwatch] Gate A: Started (AB mode)");
+          LOG_I("SW", "Gate A: Started (AB mode)");
         } else {
           // If already running, record a lap
           gui_sw_record_lap();
           Serial.println("[Stopwatch] Gate A: Lap (AB mode)");
+          LOG_I("SW", "Gate A: Lap (AB mode)");
         }
       }
       break;
@@ -90,6 +98,7 @@ void AppController::on_event(const Event& e) {
         if (this->sw.running()) {
           gui_sw_record_lap();
           Serial.println("[Stopwatch] Gate B: Lap (A mode)");
+          LOG_I("SW", "Gate B: Lap (A mode)");
         }
       } else if (mode == SW_MODE_GATE_AB) {
         // Gate A+B mode: stop on Gate B only when running
@@ -97,6 +106,7 @@ void AppController::on_event(const Event& e) {
           this->sw.stop();
           gui_sw_record_stop();
           Serial.println("[Stopwatch] Gate B: Stopped (AB mode)");
+          LOG_I("SW", "Gate B: Stopped (AB mode)");
         }
         // If not running, ignore (user must start with Gate A first)
       }

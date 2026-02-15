@@ -3,6 +3,7 @@
 #include "pcf85063a_hooks.h"
 #include "waveshare_pcf85063a.h"
 #include "rtc_manager.h"
+#include "../export/app_log.h"
 
 /* OS/VL flag is bit7 of seconds (0x04) */
 
@@ -108,6 +109,7 @@ static bool hw_reader_hook(struct tm& out)
     // 3) If still invalid, return false -> boot will fallback
     if (t.year < 2024) {
         Serial.println("[PCF] HW reader: still invalid after retry");
+        LOG_W("RTC", "HW reader: invalid after retry");
         return false;
     }
 
@@ -121,6 +123,8 @@ static bool hw_reader_hook(struct tm& out)
     out.tm_wday = t.dotw;
 
     Serial.println("[PCF] HW reader: time accepted");
+    LOG_I("RTC", "HW reader: time accepted %d-%02d-%02d %02d:%02d:%02d", 
+          t.year, t.month, t.day, t.hour, t.min, t.sec);
     return true;
 }
 
@@ -137,6 +141,7 @@ static bool hw_writer_hook(const struct tm& in)
         Serial.println("[PCF] Auto-cleared OS/VL after time update.");
     }
 
+    LOG_I("RTC", "HW writer: time written to PCF85063A");
     return ok;
 }
 

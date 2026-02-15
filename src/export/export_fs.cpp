@@ -8,6 +8,7 @@
  *  - Exact signatures preserved (links from GUI)
  *****/
 #include "export_fs.h"
+#include "app_log.h"
 #include <Arduino.h>
 #include <FS.h>
 #include <SD.h>      // SD.cardSize()
@@ -85,11 +86,14 @@ String exportfs_save_csv(const char* mode, void (*emit_csv)(Print& out)){
     return "";
   }
 
+  LOG_I("SD", "Saving CSV: %s", path.c_str());
+
   // Actual write guarded by CS (CH422G) for the entire open/write/close
   ChronosSdSelectGuard _sd;
   File f = g_fs->open(path, FILE_WRITE);
   if (!f) {
     Serial.printf("[Export] save failed: open('%s', FILE_WRITE) returned null\n", path.c_str());
+    LOG_E("SD", "Write failed: %s", path.c_str());
     return "";
   }
 
@@ -108,6 +112,7 @@ String exportfs_save_csv(const char* mode, void (*emit_csv)(Print& out)){
   }
 
   Serial.printf("[Export] saved CSV -> %s (%u bytes)\n", path.c_str(), (unsigned)written);
+  LOG_I("SD", "CSV saved: %s", path.c_str());
   return path;
 }
 
@@ -240,7 +245,9 @@ bool exportfs_delete_file(const String& absPath){
   if (!g_fs || !is_under_exp(absPath)) return false;
   ChronosSdSelectGuard _sd;
   if (!g_fs->exists(absPath)) return false;
-  return g_fs->remove(absPath);
+  bool ok = g_fs->remove(absPath);
+  LOG_I("SD", "Delete file: %s -> %s", absPath.c_str(), ok ? "OK" : "FAIL");
+  return ok;
 }
 
 bool exportfs_delete_date(const String& date){
@@ -260,7 +267,9 @@ bool exportfs_delete_date(const String& date){
     if (g_fs->exists(fp)) g_fs->remove(fp);
     delay(0);
   }
-  return g_fs->rmdir(dirPath);
+  bool ok = g_fs->rmdir(dirPath);
+  LOG_I("SD", "Delete date: %s -> %s", date.c_str(), ok ? "OK" : "FAIL");
+  return ok;
 }
 
 /* ---------- Status + purge ------------------------------------------------ */
@@ -327,6 +336,8 @@ bool exportfs_purge_oldest_until_free(uint64_t minFreeBytes, uint64_t* outFreed)
     if (freeBytes() >= minFreeBytes) return true;
     delay(0);
   }
+  uint64_t final_freed = outFreed ? *outFreed : 0;
+  LOG_W("SD", "Purge: freed %llu bytes", (unsigned long long)final_freed);
   return (freeBytes() >= minFreeBytes);
 }
 
