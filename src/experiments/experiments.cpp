@@ -1,6 +1,7 @@
 
 #include "experiments.h"
 #include "../core/gate_engine.h"
+#include "../export/app_log.h"
 #include <Arduino.h>
 #include <Preferences.h>
 #include <vector>
@@ -214,6 +215,9 @@ bool experiments_record_cv(double& speed_mps, double& time_ms, std::string& form
            0.0, 0.0, 0.0, 0.0, human_time()};
   push_limited(runs_cv, r);
   stamp_sigma(runs_cv, true, false);
+  
+  LOG_I("EXP", "CV run #%u: speed=%.3f m/s, time=%.3f ms", 
+        s_run_cv, speed_mps, time_ms);
   return true;
 }
 
@@ -243,6 +247,9 @@ bool experiments_record_photogate(double& speed_mps, double& time_ms, std::strin
            0.0, 0.0, 0.0, 0.0, human_time()};
   push_limited(runs_pg, r);
   stamp_sigma(runs_pg, true, false);
+  
+  LOG_I("EXP", "Photogate run #%u: speed=%.3f m/s, time=%.3f ms", 
+        s_run_pg, speed_mps, time_ms);
   return true;
 }
 
@@ -299,6 +306,9 @@ bool experiments_record_ua(double& acc_mps2,
            v1_mps, v2_mps, 0.0, 0.0, human_time()};
   push_limited(runs_ua, r);
   stamp_sigma(runs_ua, true, true);
+  
+  LOG_I("EXP", "UA run #%u: acc=%.3f m/s², v1=%.3f m/s, v2=%.3f m/s", 
+        s_run_ua, acc_mps2, v1_mps, v2_mps);
   return true;
 }
 
@@ -342,6 +352,9 @@ bool experiments_record_freefall(double& v_mps, double& g_mps2, double& tau_ms, 
              0.0, 0.0, 0.0, 0.0, human_time()};
     push_limited(runs_ff, r);
     stamp_sigma(runs_ff, true, true);
+    
+    LOG_I("EXP", "FreeFall run #%u: g=%.3f m/s², v=%.3f m/s, tau=%.3f ms", 
+          s_run_ff, g_mps2, v_mps, tau_ms);
     return true;
 }
 
@@ -419,6 +432,9 @@ bool experiments_record_incline(double& a_mps2,
              v1_mps, v2_mps, 0.0, 0.0, human_time()};
     push_limited(runs_incl, r);
     stamp_sigma(runs_incl, true, true);
+    
+    LOG_I("EXP", "Incline run #%u: acc=%.3f m/s², v1=%.3f m/s, v2=%.3f m/s", 
+          s_run_incl, a_mps2, v1_mps, v2_mps);
     return true;
 }
 
@@ -448,6 +464,9 @@ bool experiments_record_tacho(double& rpm, double& period_ms, std::string& formu
   Run r = {"Tachometer", ++s_run_ta, (double)slots, period_ms, 0.0, 0.0, rpm,
            0.0, 0.0, 0.0, 0.0, human_time()};
   push_limited(runs_tacho, r);
+  
+  LOG_I("EXP", "Tacho run #%u: rpm=%.1f, period=%.3f ms, slots=%u", 
+        s_run_ta, rpm, period_ms, (unsigned)slots);
   return true;
 }
 
