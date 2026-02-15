@@ -11,6 +11,7 @@
 #include "web_export.h"
 #include "export_fs.h"
 #include "chronos_sd.h"
+#include "app_log.h"
 
 #ifdef HAS_GUI_NOTE_USER_ACTIVITY
 extern "C" void gui_note_user_activity();
@@ -1642,6 +1643,7 @@ static void handle_status() {
     b += String((unsigned long long)used);
     b += "}";
     s_server->send(200, "application/json", b);
+    LOG_I("WEB", "/api/status requested");
 }
 
 static void handle_version() {
@@ -1650,6 +1652,7 @@ static void handle_version() {
     String b = String("{\"ok\":true,\"ver\":\"") + k_web_tag + "\"}";
     Serial.printf("[Chronos][Web][%s] /api/version\n", k_web_tag);
     s_server->send(200, "application/json", b);
+    LOG_I("WEB", "/api/version requested");
 }
 
 static void handle_purge() {
@@ -1691,6 +1694,8 @@ static void handle_list() {
     if (body.isEmpty()) body = "{\"dates\":[]}";
     s_server->send(200, "application/json", body);
     s_list_busy = false;
+    LOG_I("WEB", "/api/list requested");
+    LOG_I("WEB", "/api/list responded (%u bytes)", body.length());
 }
 
 static void handle_rm() {
@@ -1702,10 +1707,12 @@ static void handle_rm() {
     if (f.length()) {
         if (is_bad_path(f)) {
             s_server->send(400, "application/json", "{\"ok\":false,\"err\":\"bad path\"}");
+            LOG_W("WEB", "/api/rm bad path: %s", f.c_str());
             return;
         }
         bool ok = chronos::exportfs_delete_file(f);
         s_server->send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+        LOG_I("WEB", "/api/rm file=%s result=%s", f.c_str(), ok ? "OK" : "FAIL");
         return;
     }
 
@@ -1713,10 +1720,12 @@ static void handle_rm() {
     if (date.length()) {
         if (date.length() != 10) {
             s_server->send(400, "application/json", "{\"ok\":false,\"err\":\"bad date\"}");
+            LOG_W("WEB", "/api/rm bad date: %s", date.c_str());
             return;
         }
         bool ok = chronos::exportfs_delete_date(date);
         s_server->send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+        LOG_I("WEB", "/api/rm date=%s result=%s", date.c_str(), ok ? "OK" : "FAIL");
         return;
     }
 
@@ -1799,6 +1808,7 @@ static void handle_zip() {
     fs->remove(path);
     s_zip_busy = false;
     Serial.printf("[Chronos][Web][%s] /zip end sent %u/%u\n", k_web_tag, (unsigned)sent, (unsigned)expected);
+    LOG_I("WEB", "/zip date=%s (%u bytes)", date.c_str(), (unsigned)expected);
 }
 
 static void handle_dl() {
@@ -1845,6 +1855,7 @@ static void handle_dl() {
     File file = fs->open(f, FILE_READ);
     if (!file) {
         s_server->send(404, "text/plain", "Not found");
+        LOG_E("WEB", "/dl open failed: %s", f.c_str());
         return;
     }
 
@@ -1877,6 +1888,61 @@ static void handle_dl() {
     file.close();
     client.stop();
     Serial.printf("[Chronos][Web][%s] /dl end sent %u/%u\n", k_web_tag, (unsigned)sent, (unsigned)expected);
+    LOG_I("WEB", "/dl f=%s (%u bytes)", f.c_str(), (unsigned)expected);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Log handlers
+// ─────────────────────────────────────────────────────────────
+static void handle_log() {
+    mark_presence();
+    send_no_cache_headers();
+    
+    int tail = 200;  // Default: last 200 lines
+    if (s_server->hasArg("tail")) {
+        tail = s_server->arg("tail").toInt();
+        if (tail < 1) tail = 1;
+        if (tail > 1000) tail = 1000;  // Reasonable limit
+    }
+    
+    String content = applog_read_tail(tail);
+    s_server->send(200, "text/plain", content);
+    
+    LOG_I("WEB", "/api/log requested (tail=%d, %u bytes)", tail, content.length());
+}
+
+static void handle_log_level() {
+    mark_presence();
+    send_no_cache_headers();
+    
+    // Check if setting level
+    if (s_server->hasArg("set")) {
+        int newLevel = s_server->arg("set").toInt();
+        if (newLevel >= LOG_LEVEL_DEBUG && newLevel <= LOG_LEVEL_FATAL) {
+            applog_set_level(newLevel);
+            String resp = "{\"ok\":true,\"level\":" + String(newLevel) + "}";
+            s_server->send(200, "application/json", resp);
+            LOG_I("WEB", "/api/log/level set=%d", newLevel);
+        } else {
+            s_server->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid level\"}");
+        }
+    } else {
+        // Return current level
+        int level = applog_get_level();
+        String resp = "{\"ok\":true,\"level\":" + String(level) + "}";
+        s_server->send(200, "application/json", resp);
+        LOG_I("WEB", "/api/log/level requested");
+    }
+}
+
+static void handle_log_clear() {
+    mark_presence();
+    send_no_cache_headers();
+    
+    applog_clear();
+    s_server->send(200, "application/json", "{\"ok\":true}");
+    
+    LOG_I("WEB", "/api/log/clear requested");
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1907,6 +1973,9 @@ static bool start_server(const char* ssid, const char* pass, wifi_mode_t mode) {
     s_server->on("/api/ping",   HTTP_ANY, handle_ping);
     s_server->on("/zip",        HTTP_GET, handle_zip);
     s_server->on("/dl",         HTTP_GET, handle_dl);
+    s_server->on("/api/log",         HTTP_GET,  handle_log);
+    s_server->on("/api/log/level",   HTTP_ANY,  handle_log_level);
+    s_server->on("/api/log/clear",   HTTP_ANY,  handle_log_clear);
 
     s_server->onNotFound([]() {
         s_fs_busy_until_ms = millis() + 2000;
