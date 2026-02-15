@@ -11,6 +11,7 @@
 #include "web_export.h"
 #include "export_fs.h"
 #include "chronos_sd.h"
+#include "../core/app_log.h"
 
 #ifdef HAS_GUI_NOTE_USER_ACTIVITY
 extern "C" void gui_note_user_activity();
@@ -1880,6 +1881,133 @@ static void handle_dl() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Log API handlers
+// ─────────────────────────────────────────────────────────────
+static void handle_log() {
+    s_fs_busy_until_ms = millis() + 2000;
+    request_ui_nudge();
+    mark_presence();
+    
+    send_no_cache_headers();
+    
+    if (!chronos_sd_is_ready()) {
+        s_server->send(503, "text/plain", "SD not ready");
+        return;
+    }
+    
+    // Flush any pending logs before reading
+    app_log_flush();
+    
+    const char* logPath = app_log_get_path();
+    
+    ChronosSdSelectGuard _sel;
+    if (!SD.exists(logPath)) {
+        s_server->send(200, "text/plain", ""); // Empty log
+        return;
+    }
+    
+    File logFile = SD.open(logPath, FILE_READ);
+    if (!logFile) {
+        s_server->send(500, "text/plain", "Failed to open log");
+        return;
+    }
+    
+    // Check for tail parameter
+    String tailStr = s_server->arg("tail");
+    int tailLines = 0;
+    if (tailStr.length() > 0) {
+        tailLines = tailStr.toInt();
+    }
+    
+    if (tailLines > 0) {
+        // Count total lines and skip to last N
+        int totalLines = 0;
+        while (logFile.available()) {
+            if (logFile.read() == '\n') totalLines++;
+        }
+        
+        logFile.seek(0);
+        int skipLines = totalLines - tailLines;
+        if (skipLines > 0) {
+            int lineCount = 0;
+            while (logFile.available() && lineCount < skipLines) {
+                if (logFile.read() == '\n') lineCount++;
+            }
+        }
+    }
+    
+    // Stream the log file
+    s_server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+    s_server->send(200, "text/plain", "");
+    
+    WiFiClient client = s_server->client();
+    uint8_t buf[512];
+    while (logFile.available() && client.connected()) {
+        size_t n = logFile.read(buf, sizeof(buf));
+        if (n > 0) {
+            client.write(buf, n);
+        }
+        delay(0);
+    }
+    
+    logFile.close();
+}
+
+static void handle_log_clear() {
+    s_fs_busy_until_ms = millis() + 2000;
+    request_ui_nudge();
+    mark_presence();
+    
+    send_no_cache_headers();
+    
+    if (!chronos_sd_is_ready()) {
+        s_server->send(503, "application/json", "{\"ok\":false,\"err\":\"SD not ready\"}");
+        return;
+    }
+    
+    const char* logPath = app_log_get_path();
+    
+    ChronosSdSelectGuard _sel;
+    
+    // Delete current log
+    if (SD.exists(logPath)) {
+        SD.remove(logPath);
+    }
+    
+    // Delete old log
+    if (SD.exists("/log/chronos.old.log")) {
+        SD.remove("/log/chronos.old.log");
+    }
+    
+    // Log the clear action
+    CLOG_I("APWEB", "Log cleared by user");
+    
+    s_server->send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handle_log_level() {
+    s_fs_busy_until_ms = millis() + 2000;
+    request_ui_nudge();
+    mark_presence();
+    
+    send_no_cache_headers();
+    
+    // Check for set parameter
+    String setStr = s_server->arg("set");
+    if (setStr.length() > 0) {
+        int newLevel = setStr.toInt();
+        if (newLevel >= 0 && newLevel <= 4) {
+            app_log_set_level((LogLevel)newLevel);
+        }
+    }
+    
+    // Return current level
+    int currentLevel = (int)app_log_get_level();
+    String json = "{\"level\":" + String(currentLevel) + "}";
+    s_server->send(200, "application/json", json);
+}
+
+// ─────────────────────────────────────────────────────────────
 // Server lifecycle
 // ─────────────────────────────────────────────────────────────
 static bool start_server(const char* ssid, const char* pass, wifi_mode_t mode) {
@@ -1905,6 +2033,9 @@ static bool start_server(const char* ssid, const char* pass, wifi_mode_t mode) {
     s_server->on("/api/list",   HTTP_GET, handle_list);
     s_server->on("/api/rm",     HTTP_GET, handle_rm);
     s_server->on("/api/ping",   HTTP_ANY, handle_ping);
+    s_server->on("/api/log",         HTTP_GET, handle_log);
+    s_server->on("/api/log/clear",   HTTP_GET, handle_log_clear);
+    s_server->on("/api/log/level",   HTTP_GET, handle_log_level);
     s_server->on("/zip",        HTTP_GET, handle_zip);
     s_server->on("/dl",         HTTP_GET, handle_dl);
 

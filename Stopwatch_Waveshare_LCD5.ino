@@ -24,6 +24,7 @@
 #include "src/gui/screensaver.h"
 #include "src/core/rtc_manager.h"
 #include "src/core/pcf85063a_hooks.h"
+#include "src/core/app_log.h"
 
 // Export system (SD + Web UI)
 #include "src/export/export_fs.h"
@@ -190,6 +191,14 @@ void setup() {
   gate_engine_init();
   experiments_init();
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Initialize persistent logging (after SD and RTC are ready)
+  // ═══════════════════════════════════════════════════════════════════════
+  app_log_init(LOG_INFO, 512);
+  CLOG_I("BOOT", "Firmware built " __DATE__ " " __TIME__);
+  CLOG_I("BOOT", "Wi-Fi pref: %s", wifi_on ? "ON" : "OFF");
+  CLOG_I("BOOT", "SD: %s", chronos_sd_is_ready() ? "OK" : "FAIL");
+
   gLastUserActivityMs = millis();
   
   Serial.println("=== CHRONOS READY ===\n");
@@ -292,6 +301,7 @@ void loop() {
   // ═══════════════════════════════════════════════════════════════════════
   // LVGL task handler (must be called regularly for UI updates)
   // ═══════════════════════════════════════════════════════════════════════
+  app_log_loop();
   lv_timer_handler();
   
   // Minimal delay — input.cpp throttles its own I²C reads at 5ms intervals,

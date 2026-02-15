@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "app_controller.h"
 #include "event_bus.h"
+#include "app_log.h"
 #include "../gui/gui.h"
 
 // Stopwatch gate mode values (must match SwGateMode enum in gui.cpp)
@@ -29,6 +30,7 @@ static constexpr uint8_t MODE_COUNT =
 void AppController::enter_mode() {
   uint8_t idx = startIndex;
   if (idx >= MODE_COUNT) idx = 0;
+  CLOG_I("MODE", "enter_mode -> idx=%u", (unsigned)idx);
   Serial.printf("[AppController] enter_mode -> idx=%u, fn=%p\n",
                 (unsigned)idx, (void*)MODE_ROUTES[idx]);
   MODE_ROUTES[idx]();  // call the function pointer

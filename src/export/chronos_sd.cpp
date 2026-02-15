@@ -13,6 +13,7 @@
 #include "chronos_sd.h"
 #include "../drivers/hal_i2c_executor.h"
 #include "../drivers/hal_i2c_manager.h" // fallback
+#include "../core/app_log.h"
 
 static bool s_sd_ready = false;
 static bool s_cs_low   = false;
@@ -156,6 +157,7 @@ bool chronos_sd_begin() {
     }
   }
   if (!ok) {
+    CLOG_E("SD", "SD.begin failed");
     Serial.println("[Chronos][SD] SD.begin failed");
     return false;
   }
@@ -174,6 +176,7 @@ bool chronos_sd_begin() {
   chronos::exportfs_set_fs(&SD);
   s_sd_ready = true;
   uint64_t mb = SD.cardSize() / (1024ULL * 1024ULL);
+  CLOG_I("SD", "SD ready, card ~ %llu MB", (unsigned long long)mb);
   Serial.printf("[Chronos][SD] ready, card ~ %llu MB\n", (unsigned long long)mb);
   return true;
 
