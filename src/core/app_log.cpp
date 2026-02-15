@@ -31,6 +31,7 @@ static uint16_t  s_ring_head = 0;
 static uint16_t  s_ring_tail = 0;
 static LogLevel  s_min_level = LOG_INFO;
 static uint16_t  s_max_file_kb = 512;
+static uint32_t  s_max_file_bytes = 0; // Cached byte threshold
 static uint32_t  s_last_flush_ms = 0;
 static bool      s_initialized = false;
 static uint32_t  s_boot_uptime_s = 0;
@@ -78,6 +79,7 @@ static void format_timestamp(char* buf, size_t bufsize) {
              t.tm_hour, t.tm_min, t.tm_sec);
   } else {
     // Fallback: uptime since boot
+    // Note: millis() overflows after ~49.7 days; this is acceptable for temporary fallback
     uint32_t uptime_s = (millis() / 1000) + s_boot_uptime_s;
     snprintf(buf, bufsize, "UP+%lu", (unsigned long)uptime_s);
   }
@@ -111,7 +113,7 @@ static void check_rotation() {
   size_t sz = f.size();
   f.close();
   
-  if (sz >= (size_t)s_max_file_kb * 1024) {
+  if (sz >= s_max_file_bytes) {
     do_rotation();
   }
 }
@@ -124,6 +126,7 @@ void app_log_init(LogLevel minLevel, uint16_t maxFileKB) {
   
   s_min_level = minLevel;
   s_max_file_kb = maxFileKB;
+  s_max_file_bytes = (uint32_t)maxFileKB * 1024; // Cache byte threshold
   s_boot_uptime_s = millis() / 1000;
   s_last_flush_ms = millis();
   

@@ -1996,7 +1996,7 @@ static void handle_log_level() {
     String setStr = s_server->arg("set");
     if (setStr.length() > 0) {
         int newLevel = setStr.toInt();
-        if (newLevel >= 0 && newLevel <= 4) {
+        if (newLevel >= LOG_DEBUG && newLevel <= LOG_FATAL) {
             app_log_set_level((LogLevel)newLevel);
         }
     }
