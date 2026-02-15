@@ -1900,13 +1900,19 @@ static void handle_log() {
     
     const char* logPath = app_log_get_path();
     
+    FS* fs = chronos::exportfs_get_fs();
+    if (!fs) {
+        s_server->send(500, "text/plain", "FS not available");
+        return;
+    }
+    
     ChronosSdSelectGuard _sel;
-    if (!SD.exists(logPath)) {
+    if (!fs->exists(logPath)) {
         s_server->send(200, "text/plain", ""); // Empty log
         return;
     }
     
-    File logFile = SD.open(logPath, FILE_READ);
+    File logFile = fs->open(logPath, FILE_READ);
     if (!logFile) {
         s_server->send(500, "text/plain", "Failed to open log");
         return;
@@ -1967,16 +1973,22 @@ static void handle_log_clear() {
     
     const char* logPath = app_log_get_path();
     
+    FS* fs = chronos::exportfs_get_fs();
+    if (!fs) {
+        s_server->send(500, "application/json", "{\"ok\":false,\"err\":\"FS not available\"}");
+        return;
+    }
+    
     ChronosSdSelectGuard _sel;
     
     // Delete current log
-    if (SD.exists(logPath)) {
-        SD.remove(logPath);
+    if (fs->exists(logPath)) {
+        fs->remove(logPath);
     }
     
     // Delete old log
-    if (SD.exists("/log/chronos.old.log")) {
-        SD.remove("/log/chronos.old.log");
+    if (fs->exists("/log/chronos.old.log")) {
+        fs->remove("/log/chronos.old.log");
     }
     
     // Log the clear action
