@@ -247,32 +247,24 @@ void loop() {
   if (gScreenSaverActive && gWakeFromSaverPending && !gWakeInProgress) {
     gWakeInProgress = true;
     
-    Serial.println("[Screensaver] Wake requested - keeping gates paused during backlight");
-    LOG_I("SAVER", "Wake requested");
+    Serial.println("[Screensaver] Wake requested");
     
-    // 1. Hide screensaver overlay (keeps gate polling paused)
+    // 1. Hide screensaver overlay
     screensaver_hide();
     
-    // 2. Turn on backlight with retries
-    for (int retry = 0; retry < 5; retry++) {
-      delay(50);
-      hal::backlight_on();
-      delay(50);
-      break;
-    }
+    // 2. Turn on backlight
+    hal::backlight_on();
+    delay(50);  // brief settle — was 600ms total
     
-    // 3. Wait longer for I²C to settle
-    delay(500);
-    
-    // 4. Resume gate polling
+    // 3. Resume gate polling
     input_resume();
     
     gScreenSaverActive = false;
     gWakeFromSaverPending = false;
     gWakeInProgress = false;
+    gLastUserActivityMs = millis();  // reset timeout
     
     Serial.println("[Screensaver] Wake complete");
-    LOG_I("SAVER", "Wake complete");
   }
 
   // ═══════════════════════════════════════════════════════════════════════
