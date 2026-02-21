@@ -1,0 +1,184 @@
+1. make a small button footer in each measurement screen section so buttons do not overlap measurement texts. If needed, make buttons narrower
+2. experiment setting page, make labels for input field explaining the meaning
+3. when i try to save the experiment settings, device restarts
+4. All wi-Fi text should be Wifi
+
+---------------------------------------------------------------------------------------
+
+1.All measurements command button footer is over the measurement values section. This section should be lifted
+2.Stopwatch should have the same uniform command button footer
+3.Command button footer texts should fit in the buttons. Make text smaller. 
+4.Measurement buffer list items have two order numbers currently. That needs to be correccted.
+5.UA measurement shows only ueros for acceleration in the measurement buffer.
+6. Can you show a proper m/s2 power of two?
+
+-----------------------------------------------------------------------------------------------------
+
+1. Experiment settings input value descritions/labels are still not shown/missiong
+2. Remove armed duration on screen counter for all 
+3. Lift the result texts a bit up so they do not go below the comannd button footer
+4. Make the sumulation buttons smaller, shorter, to gain more space for the measurement screen section
+5. comannd button footer buttons are wider than the command footer, make the buttons closer to each other so there is no scroolin needed
+6. Stopwatch, animate the start stop button green. Make the buffer value section higer, all the way to the page header
+7. Stopwatch buffer should also show last value at the top
+8. Write m/s2 like that until we resolve the superscript issue
+9. Make the experiment setting screen keyboard check button do the same as save button, and return to the measurement screen. 
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+1. Hide wifi indication if wifi is disabled
+2. Experiment settings input value descritions/labels are still not shown - why?
+3. Stopwatch measurement buffer values should also be shown with last value at the top
+
+
+1. Stopwatch buffer order numebrs, greatest should be at the top.
+2. UA accelerationmeasurement should use 2 optical gates and calcluate acceration based on object lenght. That should also be in the experiment settings. 
+3. Propose additional physics experiments to inlcude
+
+--------------------------------------------------------------------------------------------------
+
+1. return UA mesnurement description text as it was, do not change
+2. New experiment modes cause restart
+3. Disable wifi scanning if wifi is turned off
+
+
+--------------------------------------------------------------------------------------------------
+
+1. Main menu top items are beneath the screen header, centre vertically on area beneath the header
+2. Free fall does not calculate anything when blocked and unblocked
+3. Free fall measurement display values go outside the measurement screen section
+3. Buffer value numbering stops incrementing at 51
+
+1. Main menu  items are still beneath the screen header, lover and centre vertically on area beneath the header
+2. Stopwatch buffer order number stops incrementing after 10
+3. Free fall sends values to buffer but does not show anything in the measurement value section
+
+1. Main menu  items are still beneath the screen header, lover and centre vertically on area beneath the header
+2. Free fall sends values to buffer but does not show anything in the measurement value section
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+1. Make the main menu buttons wider so text is not cropped
+2. Make the main menu buttons vetically centered beneath the header
+3. There are no mesurement calculations and explanations in the center measurement screen section
+4. Make the buffer value section a bit wider, so it touchjes the center masurement area section
+
+1. Make the buffer value section a bit narrower, so teh control button footer fits without scrooling
+2. Make the buffer value section values in two rows if thy exceed section widht
+3. All Measurement values in the center measurement section have disappeared in the last revision
+4. Lower the main menu buttons a bit
+
+
+1. Free fall, inclined  UA, tachometer and CV buffer counter does not restart order numbering
+2. Main menu, you've lowered the frame in witch the buttons are placed and not the actual buttons. The top row is now cropped. Make buttons shorter if needed
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+2026-01-06
+
+1. Stopwatch, add optical gate funcionality. Modes, no gate, gate A or gate A+B mode and a related mode selection in settings. Gate A mode, counter is started and stopped by gate A. Gate A+B, counter is started on Gate A and stopped on gate B. No gate, counter is started and stopped by on screen control. In A and A+B mode, start only arms the system, while gate activation records a lap. Enalbe simaulation in all modes. 
+2. Uniform acceleration, modify , only 2 gates are used, simulation buttons should be Block A, Unblock A, Block B, Unblock B. 
+3. Add “Free Fall”, “Inclined Plane”, and “Tachometer” into the controller MODES[] and AppController::enter_mode().
+4. If wifi is off, do not scan wifi or do any wifi related steps
+5. UA gate, remove D froma experiment, it is not used
+6. Enforce uniform buffer cleaning on screen change for all experiments.
+7. Re-introduce screen saver. 
+8. Select all content on focus on any input field - input replaces the current value
+9. Add welcome screen while starting for eq 3 sec. How to add company logo or a complete screen png?
+10. All circular buffer values for all experiments should be reset when user returns on main menu. 
+11. Introduce translations for all texts, and fonts that include language local charachters, greek characters and superscript used in formulas. 
+12. Translation texts CSV export/import
+13. Disable scrooling in screen sections
+14. Inclined plane settings, ange setting should be an integer value, not floating point. 
+15. Introduce real-time clock (RTC)
+16. Add NTP when wifi is connected.
+17. Introduce a web page with date grouped experiment data exports. 
+18. Wifi export modal screen translations
+X. Transfer esp language setting to AP web
+X. Wifi AP captive portal - user redirect
+X. Wifi AP is sometimes on even if modal screen is not on and AP toggle is off
+
+X. rename AP web file names, add full experiment name
+X. Bind export CSV control to propt for starting AP
+X. Transfer esp language setting to AP web
+X. move sd card read function to core 
+X. simulate optical gate with switches
+X. AP web translations.
+X. csv export should indicate actual timestamp
+X. fotogate, free fall and Tachometer do not react on simulation buttons, nothing is shown on screen
+X. make csv export data have more sense
+X. remove wifi icon in header
+X. Export CSV control should export buffer values on experiment page on which is activated. 
+
+
+X. Add erase all stored settings option in settings
+X. Save CSV to SD and enable USB mass storage mode for file transfer
+X. UA screen resets when arm toggle is off
+
+
+Stopwatch 
+- include mode name in header
+- in mode gate A or gate A+B, start/stop button should be arm button, should not start the counter. 
+- settings layout should look like other experiment settings, with mode selector, input field label and description
+- if gate mode is selected, lap button should be replaced by export to CSV button
+
+
+#1
+
+Mode does not change when changed in settings. 
+Make setting page in same format as in other experiments, same look and feel, with mode dropdown selection field
+When Gate A is selected, show only Gate A simulation button, when A+B, show both, when no gate mode, do not show gate buttons
+
+
+#2 
+
+Export csv does not export experiment buffer values.
+In experiment value buffer add start and stop next to counter value
+
+Make Arm in gate A and A+B mode a manual toggle button, while armed - lights green all time, experiment is reacting to gate change, if not - it is gray  no reaction and buffer write
+Reset counter and buffer on mode change
+
+Uniform acceleration
+- Make simulation header buttons narrower, so they fit in the simulation button section
+- when armed, block a and block b calculates first passing speed, then block b and unbloack b calculate second passing speed. Upon completion of unblock b, result, acceleration calculated, shown and logged 
+
+ Write the uniform acceleration measurement data to circular buffer
+ 
+ #3 OK
+ #4 OK
+ #5 OK
+ #6 OK
+ #7 OK
+ #8 OK
+ #9 OK
+ #10 OK
+ #11 OK
+ #12 OK
+ #13 OK 
+ #14 OK 
+ #15 OK 
+ 
+ -------------------------------------------------------------------------------------------------------------------------
+
+RESOLVED - 4.Remove wifi icon shown in header
+RESOLVED - 5.CSV export is not possible beacuse extender is in input mode [E][Expander][esp_io_expander.c:0081](esp_io_expander_set_level): Pin[4] can't set level in input mode
+RESOLVED - Issue with expander on screensaver start
+
+
+1.Stopwatch does not react to optical gates
+2.Tachometer, no ecvents are shown in history on gate activation
+3.Keep simulation buttons on screen when simulation if off and animate them green as corresponding gate signal is active - Causes issues, posponed for later
+4.Add csv export on screen confirmation and clear experiment data
+5. Add ESP tyme sync (if time sync is enabled in settings) with user computer time when AP is connected
+6. Introduce diagnostic logging 
+
+Stopwatch - if Gate A is activated before the experiment is armed, on arming the counter will start.
+
+
+FOR THE FUTURE:
+Translations in json?
+Experimet presets saving and loading
+Video sync feature (audio, light on wifi timestamp)
+I2C executor implementation - Causes issues, posponed for later
+
+Add offline storage of files to Chronos-Desktop, make app compare, yynchonize and copy files on connection

@@ -17,6 +17,9 @@
 /* Initialize logging subsystem (call after SD mount) */
 void applog_init();
 
+/* Signal boot complete — flushes buffered boot logs to SD in one write */
+void applog_boot_complete();
+
 /* Log macros - format: YYYY-MM-DD HH:MM:SS [L] [TAG] message */
 #define LOG_D(tag, fmt, ...) applog_write(LOG_LEVEL_DEBUG, tag, fmt, ##__VA_ARGS__)
 #define LOG_I(tag, fmt, ...) applog_write(LOG_LEVEL_INFO,  tag, fmt, ##__VA_ARGS__)

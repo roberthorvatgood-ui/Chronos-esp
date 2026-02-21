@@ -2,6 +2,7 @@
  * app_log.cpp
  * Chronos – Persistent SD-card-backed logging system
  * Thread-safe structured logging with runtime level filtering, rotation, NVS persistence
+ * [Updated: 2026-02-18] Deferred boot writes to eliminate SD overhead during setup()
  *****/
 
 #include "app_log.h"
@@ -24,6 +25,11 @@ static const char* NVS_LEVEL_KEY = "level";
 static SemaphoreHandle_t s_log_mutex = nullptr;
 static int s_current_level = LOG_LEVEL_INFO;  // Default level
 static bool s_initialized = false;
+static bool s_boot_complete = false;           // NEW: deferred write flag
+
+/* Boot buffer: accumulate log lines during setup(), flush once at end */
+static String s_boot_buffer;
+static const size_t BOOT_BUFFER_MAX = 4096;
 
 /* Level to character mapping */
 static char level_char(int level) {
@@ -102,6 +108,26 @@ static void save_level_to_nvs(int level) {
     }
 }
 
+/* Flush boot buffer to SD in a single write */
+static void flush_boot_buffer() {
+    if (s_boot_buffer.length() == 0) return;
+    
+    if (s_log_mutex && xSemaphoreTake(s_log_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        check_rotation();
+        
+        ChronosSdSelectGuard _sd;
+        File f = SD.open(LOG_PATH, FILE_APPEND);
+        if (f) {
+            f.print(s_boot_buffer);  // single write for all boot lines
+            f.close();
+        }
+        
+        xSemaphoreGive(s_log_mutex);
+    }
+    
+    s_boot_buffer = "";  // free memory
+}
+
 /* Initialize logging subsystem */
 void applog_init() {
     if (s_initialized) {
@@ -124,12 +150,22 @@ void applog_init() {
         }
     }
     
+    // Reserve boot buffer
+    s_boot_buffer.reserve(BOOT_BUFFER_MAX);
+    
     s_initialized = true;
     
     // Write initialization message
     applog_write(LOG_LEVEL_INFO, "APPLOG", 
                  "Logging initialized (level=%c, max=%u KB)",
                  level_char(s_current_level), (unsigned)(MAX_LOG_SIZE / 1024));
+}
+
+/* Signal that boot is complete — flush buffered logs to SD */
+void applog_boot_complete() {
+    s_boot_complete = true;
+    flush_boot_buffer();
+    Serial.println("[APPLOG] Boot buffer flushed to SD");
 }
 
 /* Core logging function */
@@ -157,6 +193,14 @@ void applog_write(int level, const char* tag, const char* fmt, ...) {
     
     // Print to Serial (always, regardless of level)
     Serial.print(line);
+    
+    // ── During boot: buffer in RAM instead of hitting SD per line ──
+    if (!s_boot_complete) {
+        if (s_boot_buffer.length() + line.length() < BOOT_BUFFER_MAX) {
+            s_boot_buffer += line;
+        }
+        return;  // skip SD write until boot is done
+    }
     
     // Write to SD card (with mutex protection)
     if (s_log_mutex && xSemaphoreTake(s_log_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {

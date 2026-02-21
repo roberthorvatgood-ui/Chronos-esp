@@ -3,6 +3,7 @@
  * Integrated SD Export + Web UI + CH422G Pushbutton Gates
  * [Updated: 2026-02-08] Added I²C executor init and gate input pause/resume coordination
  * [Updated: 2026-02-11] Removed loop-level gate throttle for faster response
+ * [Updated: 2026-02-18] Reintroduced splash screen; black screen during boot instead of white
  *****/
 
 #include <Arduino.h>
@@ -30,6 +31,9 @@
 #include "src/export/chronos_sd.h"
 #include "src/export/web_export.h"
 #include "src/export/app_log.h"
+
+// ── Splash screen on boot ────────────────────────────────────────────────────
+#define SHOW_SPLASH 1       // set to 0 to skip the splash and go straight to main menu
 
 namespace chronos { bool apweb_fs_busy(); }
 
@@ -110,6 +114,20 @@ void setup() {
   if (!hal::begin()) Serial.println("[HAL] begin() failed");
   if (!hal::lvgl_init()) Serial.println("[HAL] lvgl_init() failed");
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Immediately paint a black screen so the user sees black (not white)
+  // during the remaining setup.  This replaces the uninitialized white
+  // framebuffer that became visible after recent setup got longer.
+  // The splash or main menu will replace this screen later.
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    lv_obj_t* blk = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(blk, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(blk, LV_OPA_COVER, 0);
+    lv_scr_load(blk);
+    lv_timer_handler();   // flush the black frame to the display NOW
+  }
+
   // Wait for CH422G expander to be ready (with timeout)
   hal::expander_wait_ready(800);
 
@@ -157,6 +175,7 @@ void setup() {
 
   // ═══════════════════════════════════════════════════════════════════════
   // Splash screen or main menu
+  // (replaces the temporary black screen loaded above)
   // ═══════════════════════════════════════════════════════════════════════
 #if SHOW_SPLASH
   gui_show_splash_embedded();
@@ -212,6 +231,9 @@ void setup() {
 
   gLastUserActivityMs = millis();
   
+  // Flush all buffered boot log lines to SD in a single write
+  applog_boot_complete();
+
   Serial.println("=== CHRONOS READY ===\n");
   LOG_I("BOOT", "CHRONOS READY (heap: %u)", ESP.getFreeHeap());
 }
