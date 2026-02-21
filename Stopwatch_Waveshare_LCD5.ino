@@ -4,6 +4,7 @@
  * [Updated: 2026-02-08] Added I²C executor init and gate input pause/resume coordination
  * [Updated: 2026-02-11] Removed loop-level gate throttle for faster response
  * [Updated: 2026-02-18] Reintroduced splash screen; black screen during boot instead of white
+ * [Updated: 2026-02-21] OPTIMIZED: RTC initialization moved before logging to ensure proper timestamps
  *****/
 
 #include <Arduino.h>
@@ -78,7 +79,7 @@ static void load_screensaver_timeout() {
   Serial.printf("[Setup] Screensaver timeout (s): %lu\n", (unsigned long)gScreenSaverTimeoutS);
 }
 
-// [2026-02-08] Main setup with I²C executor and CH422G pushbutton gate support
+// [2026-02-21] Main setup with RTC initialized BEFORE logging for proper timestamps
 void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 2000) {}
@@ -106,7 +107,7 @@ void setup() {
 
   load_screensaver_timeout();
 
-  // ═══════════════════════════════════════════════════════════════════════
+  // ══════════���════════════════════════════════════════════════════════════
   // HAL: panel, LCD, touch, backlight
   // Now uses I²C executor for CH422G operations
   // ═══════════════════════════════════════════════════════════════════════
@@ -149,20 +150,47 @@ void setup() {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Export system: mount SD & start Web UI (AP mode)
+  // Export system: mount SD
   // SD operations now protected by I²C executor when accessing CH422G CS pin
   // ═══════════════════════════════════════════════════════════════════════
   bool sd_ok = chronos_sd_begin();
   if (!sd_ok) {
     Serial.println("[Export] SD init failed — export UI will still start, but listing will be empty.");
   }
-  
-  // Initialize logging system right after SD mount
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // [OPTIMIZATION] Initialize RTC BEFORE logging so all log entries have valid timestamps
+  // This ensures even early boot logs show correct date/time instead of 2000-01-01
+  // ═══════════════════════════════════════════════════════════════════════
+  if (sd_ok) {
+    Serial.println("[Setup] Initializing RTC (hardware hooks)...");
+    init_pcf_hooks();
+    delay(50);
+
+    rtc_init();
+    test_pcf_battery();
+
+    // Auto-clear OS/VL flag if RTC time is valid
+    struct tm t {};
+    rtc_get_time(t);
+    if ((t.tm_year + 1900) >= 2024) {
+      Serial.printf("[RTC] Time synchronized: %d-%02d-%02d %02d:%02d:%02d\n", 
+            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, 
+            t.tm_hour, t.tm_min, t.tm_sec);
+      bool os = true;
+      if (pcf_rtc_get_os_flag(os) && os) {
+        pcf_rtc_clear_os_flag();
+        Serial.println("[PCF] Cleared OS/VL flag automatically.");
+      }
+    }
+  }
+
+  // NOW initialize logging with valid RTC time
   if (sd_ok) {
     applog_init();
   }
   
-  // Log boot information
+  // Log boot information (now with proper timestamps)
   LOG_I("BOOT", "Firmware built %s %s", __DATE__, __TIME__);
   LOG_I("BOOT", "Wi-Fi pref: %s", wifi_on ? "ON" : "OFF");
   LOG_I("BOOT", "SD: %s", sd_ok ? "OK" : "FAIL");
@@ -198,30 +226,6 @@ void setup() {
 
   // Subscribe to event bus
   gBus.subscribe(&onBusEvent);
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Attach hardware RTC (PCF85063A on SDA=8, SCL=9)
-  // Now uses I²C executor for all RTC read/write operations
-  // ═══════════════════════════════════════════════════════════════════════
-  init_pcf_hooks();
-  delay(50);
-
-  rtc_init();
-  test_pcf_battery();
-
-  // Auto-clear OS/VL flag if RTC time is valid
-  struct tm t {};
-  rtc_get_time(t);
-  if ((t.tm_year + 1900) >= 2024) {
-    LOG_I("RTC", "Time: %d-%02d-%02d %02d:%02d:%02d", 
-          t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, 
-          t.tm_hour, t.tm_min, t.tm_sec);
-    bool os = true;
-    if (pcf_rtc_get_os_flag(os) && os) {
-      pcf_rtc_clear_os_flag();
-      Serial.println("[PCF] Cleared OS/VL flag automatically.");
-    }
-  }
 
   // ═══════════════════════════════════════════════════════════════════════
   // Initialize gate engine and experiments
