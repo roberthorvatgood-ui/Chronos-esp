@@ -257,6 +257,15 @@ static void safe_transition(void (*show_screen_fn)()) {
 
 // [2026-01-26 21:22 CET] NEW: AP modal close handler (CLOSE AP button)
 
+// Dismiss the AP modal without stopping the AP server — user can navigate normally
+static void ap_modal_dismiss_cb(lv_event_t* /*e*/)
+{
+    if (g_ap_modal) {
+        lv_obj_del(g_ap_modal);
+        g_ap_modal = nullptr;
+    }
+}
+
 // [2026-01-26 21:28 CET] NEW: CLOSE AP handler (button in AP modal)
 static void ap_export_close_btn_cb(lv_event_t* /*e*/)
 {
@@ -374,17 +383,36 @@ static void on_sw_ap_changed(lv_event_t* e)
             lv_obj_set_style_text_font(qr_help, &ui_font_16, 0);
             lv_obj_align(qr_help, LV_ALIGN_BOTTOM_MID, 0, -4);
 
-            // CLOSE AP button
-            lv_obj_t* btn = lv_btn_create(card);
-            lv_obj_set_size(btn, 220, 56);
-            lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -12);
-            lv_obj_set_style_radius(btn, 10, 0);
+            // Bottom button row: Dismiss (keeps AP running) + CLOSE AP (stops server)
+            lv_obj_t* btn_row = lv_obj_create(card);
+            lv_obj_remove_style_all(btn_row);
+            lv_obj_set_style_bg_opa(btn_row, LV_OPA_TRANSP, 0);
+            lv_obj_set_size(btn_row, LV_PCT(100), 64);
+            lv_obj_align(btn_row, LV_ALIGN_BOTTOM_MID, 0, 0);
+            lv_obj_set_flex_flow(btn_row, LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(btn_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+            lv_obj_set_style_pad_column(btn_row, 16, 0);
+            lv_obj_clear_flag(btn_row, LV_OBJ_FLAG_SCROLLABLE);
 
-            lv_obj_t* bl = lv_label_create(btn);
-            lv_label_set_text(bl, tr("CLOSE AP"));
-            lv_obj_center(bl);
+            // Dismiss button — closes modal, AP server stays running
+            lv_obj_t* btn_dismiss = lv_btn_create(btn_row);
+            lv_obj_set_size(btn_dismiss, 180, 50);
+            lv_obj_set_style_radius(btn_dismiss, 10, 0);
+            lv_obj_set_style_bg_color(btn_dismiss, lv_color_make(0, 120, 215), 0);
+            lv_obj_t* lbl_dismiss = lv_label_create(btn_dismiss);
+            lv_label_set_text(lbl_dismiss, tr("Dismiss"));
+            lv_obj_center(lbl_dismiss);
+            lv_obj_add_event_cb(btn_dismiss, ap_modal_dismiss_cb, LV_EVENT_CLICKED, NULL);
 
-            lv_obj_add_event_cb(btn, ap_export_close_btn_cb, LV_EVENT_CLICKED, NULL);
+            // CLOSE AP button — stops the AP server entirely
+            lv_obj_t* btn_close = lv_btn_create(btn_row);
+            lv_obj_set_size(btn_close, 180, 50);
+            lv_obj_set_style_radius(btn_close, 10, 0);
+            lv_obj_set_style_bg_color(btn_close, lv_color_make(180, 40, 40), 0);
+            lv_obj_t* lbl_close = lv_label_create(btn_close);
+            lv_label_set_text(lbl_close, tr("CLOSE AP"));
+            lv_obj_center(lbl_close);
+            lv_obj_add_event_cb(btn_close, ap_export_close_btn_cb, LV_EVENT_CLICKED, NULL);
         }
     } else {
         // OFF → stop AP + modal
@@ -534,6 +562,7 @@ static void clock_tick_cb(lv_timer_t*)
 static void cv_arm_toggle_cb(lv_event_t* e)
 {
     (void)e;
+    if (!g_armed && chronos::apweb_download_active()) return; // block arm during AP download
     g_armed = !g_armed;
     
     // NEW: Set experiment state
@@ -1843,6 +1872,7 @@ static void sw_startstop_cb(lv_event_t*)
 {
     if (g_sw_mode == SwGateMode::None)
     {
+        if (!gApp.sw.running() && chronos::apweb_download_active()) return; // block start during AP download
         const bool was_running = gApp.sw.running();
         gApp.sw.toggle();
         const bool now_running = gApp.sw.running();
@@ -1879,6 +1909,7 @@ static void sw_startstop_cb(lv_event_t*)
     }
 
     // ── Gate modes (unchanged behavior + timer period tweak) ────────────────
+    if (!g_armed && chronos::apweb_download_active()) return; // block arm during AP download
     g_armed = !g_armed;
     
     // NEW: Set experiment state for gate polling
@@ -2312,6 +2343,7 @@ void gui_show_cv()
 static lv_obj_t* pg_btn_arm = nullptr;
 static void pg_arm_toggle_cb(lv_event_t*)
 {
+  if (!g_armed && chronos::apweb_download_active()) return; // block arm during AP download
   g_armed = !g_armed;
 
   // NEW: Set experiment state
@@ -2501,6 +2533,7 @@ static inline void ua_clear_state()
 static void ua_arm_toggle_cb(lv_event_t* e)
 {
     (void)e;
+    if (!g_armed && chronos::apweb_download_active()) return; // block arm during AP download
     // Toggle armed state and update button visuals
     g_armed = !g_armed;
 
@@ -2671,6 +2704,7 @@ void gui_show_ua()
 static lv_obj_t* ff_btn_arm = nullptr;
 static void ff_arm_toggle_cb(lv_event_t*)
 {
+  if (!g_armed && chronos::apweb_download_active()) return; // block arm during AP download
   g_armed = !g_armed;
 
   // NEW: Set experiment state
@@ -2852,6 +2886,7 @@ void gui_show_freefall()
 static lv_obj_t* in_btn_arm = nullptr;
 static void in_arm_toggle_cb(lv_event_t*)
 {
+  if (!g_armed && chronos::apweb_download_active()) return; // block arm during AP download
   g_armed = !g_armed;
 
   // NEW: Set experiment state
@@ -3017,6 +3052,7 @@ void gui_show_incline()
 static lv_obj_t* ta_btn_arm = nullptr;
 static void ta_arm_toggle_cb(lv_event_t*)
 {
+  if (!g_armed && chronos::apweb_download_active()) return; // block arm during AP download
   g_armed = !g_armed;
 
   // NEW: Set experiment state

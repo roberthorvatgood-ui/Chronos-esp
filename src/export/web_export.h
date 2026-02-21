@@ -22,4 +22,7 @@ bool apweb_fs_busy();
 // True while an AP page has pinged or any AP handler was hit recently
 bool apweb_user_present();
 
+// True while a file download/purge is actively in progress (gates should be paused)
+bool apweb_download_active();
+
 } // namespace chronos

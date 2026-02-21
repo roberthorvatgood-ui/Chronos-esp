@@ -22,6 +22,10 @@ extern "C" void screensaver_hide_async();
 extern "C" void screensaver_set_apweb_hold(bool hold);  // NEW: saver hold gate
 #endif
 
+// Gate polling pause/resume — defined in src/io/input.cpp
+extern void input_pause();
+extern void input_resume();
+
 namespace chronos {
 
 static WebServer* s_server = nullptr;
@@ -35,6 +39,12 @@ static volatile unsigned long s_presence_last_ms = 0;
 static constexpr unsigned long kPresenceTTL_ms   = 15000; // 15 s
 
 static volatile bool s_defer_ui_nudge = false;
+static volatile bool s_download_in_progress = false;
+
+// Time to wait after input_pause() for the I²C executor queue to drain
+static constexpr int kInputPauseSettleDelay_ms  = 50;
+// Time to wait after input_resume() for the I²C bus to settle after SD/file use
+static constexpr int kInputResumeSettleDelay_ms = 200;
 
 static inline bool time_not_expired(unsigned long deadline) {
     return (long)(deadline - millis()) > 0;
@@ -46,6 +56,10 @@ bool apweb_fs_busy() {
 
 bool apweb_user_present() {
     return (long)(millis() - s_presence_last_ms) < (long)kPresenceTTL_ms;
+}
+
+bool apweb_download_active() {
+    return s_download_in_progress;
 }
 
 // Presence-everywhere helper
@@ -1660,8 +1674,14 @@ static void handle_purge() {
     send_no_cache_headers();
     int minMB = s_server->hasArg("minFreeMB") ? s_server->arg("minFreeMB").toInt() : 5;
     if (minMB < 1) minMB = 1;
+    input_pause();
+    delay(kInputPauseSettleDelay_ms);
+    s_download_in_progress = true;
     uint64_t freed = 0;
     bool ok = chronos::exportfs_purge_oldest_until_free((uint64_t)minMB * 1024ULL * 1024ULL, &freed);
+    s_download_in_progress = false;
+    input_resume();
+    delay(kInputResumeSettleDelay_ms);
     String b = String("{\"ok\":") + (ok ? "true" : "false") +
                ",\"freed\":" + String((unsigned long long)freed) + "}";
     s_server->send(200, "application/json", b);
@@ -1741,10 +1761,16 @@ static void handle_zip() {
         return;
     }
     s_zip_busy = true;
+    input_pause();
+    delay(kInputPauseSettleDelay_ms);
+    s_download_in_progress = true;
 
     String raw = url_decode(s_server->arg("date"));
     String date;
     if (!normalize_date(raw, date)) {
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_zip_busy = false;
         s_server->send(400, "text/plain", "bad date");
         return;
@@ -1752,6 +1778,9 @@ static void handle_zip() {
 
     FS* fs = chronos::exportfs_get_fs();
     if (!fs) {
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_zip_busy = false;
         s_server->send(500, "text/plain", "FS missing");
         return;
@@ -1759,6 +1788,9 @@ static void handle_zip() {
 
     ChronosSdSelectGuard sd;
     if (!fs->exists(String("/exp/") + date)) {
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_zip_busy = false;
         s_server->send(404, "text/plain", "date folder missing");
         return;
@@ -1767,6 +1799,9 @@ static void handle_zip() {
     String zname;
     String path = chronos::exportfs_zip_temp_date(date, &zname);
     if (path.isEmpty()) {
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_zip_busy = false;
         s_server->send(500, "text/plain", "zip failed");
         return;
@@ -1775,6 +1810,9 @@ static void handle_zip() {
     File z = fs->open(path, FILE_READ);
     if (!z) {
         fs->remove(path);
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_server->send(500, "text/plain", "open failed");
         s_zip_busy = false;
         return;
@@ -1805,6 +1843,9 @@ static void handle_zip() {
     z.close();
     client.stop();
     fs->remove(path);
+    s_download_in_progress = false;
+    input_resume();
+    delay(kInputResumeSettleDelay_ms);
     s_zip_busy = false;
     Serial.printf("[Chronos][Web][%s] /zip end sent %u/%u\n", k_web_tag, (unsigned)sent, (unsigned)expected);
     LOG_I("WEB", "/zip date=%s (%u bytes)", date.c_str(), (unsigned)expected);
@@ -1815,12 +1856,18 @@ static void handle_dl() {
     request_ui_nudge();
     mark_presence();
     FsBusyGuard _busy;
+    input_pause();
+    delay(kInputPauseSettleDelay_ms);
+    s_download_in_progress = true;
 
     Serial.printf("[Chronos][Web][%s] /dl uri=%s\n", k_web_tag, s_server->uri().c_str());
     send_no_cache_headers();
 
     FS* fs = chronos::exportfs_get_fs();
     if (!fs) {
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_server->send(500, "text/plain", "FS missing");
         return;
     }
@@ -1838,6 +1885,9 @@ static void handle_dl() {
     }
 
     if (!f.length()) {
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_server->send(404, "text/plain", "Not found");
         return;
     }
@@ -1847,12 +1897,18 @@ static void handle_dl() {
 
     ChronosSdSelectGuard sd;
     if (is_bad_path(f) || !fs->exists(f)) {
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_server->send(404, "text/plain", "Not found");
         return;
     }
 
     File file = fs->open(f, FILE_READ);
     if (!file) {
+        s_download_in_progress = false;
+        input_resume();
+        delay(kInputResumeSettleDelay_ms);
         s_server->send(404, "text/plain", "Not found");
         LOG_E("WEB", "/dl open failed: %s", f.c_str());
         return;
@@ -1886,6 +1942,9 @@ static void handle_dl() {
     }
     file.close();
     client.stop();
+    s_download_in_progress = false;
+    input_resume();
+    delay(kInputResumeSettleDelay_ms);
     Serial.printf("[Chronos][Web][%s] /dl end sent %u/%u\n", k_web_tag, (unsigned)sent, (unsigned)expected);
     LOG_I("WEB", "/dl f=%s (%u bytes)", f.c_str(), (unsigned)expected);
 }
