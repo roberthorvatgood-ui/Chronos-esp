@@ -172,13 +172,18 @@ RESOLVED - Issue with expander on screensaver start
 5. Add ESP tyme sync (if time sync is enabled in settings) with user computer time when AP is connected
 6. Introduce diagnostic logging 
 
-Stopwatch - if Gate A is activated before the experiment is armed, on arming the counter will start.
+OK - Stopwatch - if Gate A is activated before the experiment is armed, on arming the counter will start.
 
+-------------------------------------------------------------------------------------------------------------------------
 
 FOR THE FUTURE:
 Translations in json?
 Experimet presets saving and loading
 Video sync feature (audio, light on wifi timestamp)
 I2C executor implementation - Causes issues, posponed for later
-
 Add offline storage of files to Chronos-Desktop, make app compare, yynchonize and copy files on connection
+
+--------------------------------------------------------------------------------------------------------------------------
+
+X.Make AP usable without locking the user in modal screeen
+X.Screen display is sometimes garbled. 
