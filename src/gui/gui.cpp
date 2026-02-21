@@ -499,7 +499,7 @@ static void on_sw_ap_changed(lv_event_t* e)
         {
             lv_obj_t* toast = lv_obj_create(lv_scr_act());
             lv_obj_set_size(toast, SCREEN_WIDTH - 40, 52);
-            lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, HEADER_H + 4);
+            lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, 76); // HEADER_H(72) + 4
             lv_obj_set_style_radius(toast, 10, 0);
             lv_obj_set_style_bg_color(toast, lv_color_hex(0x0078D4), 0);
             lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
