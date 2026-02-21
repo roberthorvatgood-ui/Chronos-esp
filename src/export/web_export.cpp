@@ -2043,4 +2043,8 @@ void apweb_end() {
     Serial.printf("[Chronos][Web][%s] server stopped\n", k_web_tag);
 }
 
+int apweb_get_connected_count() {
+    return s_running ? (int)WiFi.softAPgetStationNum() : 0;
+}
+
 } // namespace chronos

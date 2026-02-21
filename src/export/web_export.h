@@ -22,4 +22,7 @@ bool apweb_fs_busy();
 // True while an AP page has pinged or any AP handler was hit recently
 bool apweb_user_present();
 
+// Number of Wi-Fi stations currently connected to the AP (0 when not running)
+int apweb_get_connected_count();
+
 } // namespace chronos

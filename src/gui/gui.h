@@ -66,3 +66,6 @@ void gui_stop_sim_button_animation();
 
 // Screen transition guard (blocks I²C polling during LVGL screen loads)
 extern volatile bool g_screen_transition_active;
+
+// AP details modal (shown when user taps the AP badge)
+void show_ap_details_modal();
