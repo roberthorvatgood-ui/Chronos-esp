@@ -266,6 +266,107 @@ static void ap_export_close_btn_cb(lv_event_t* /*e*/)
     gui_show_settings();
 }
 
+// Build and show the AP info modal on the current active screen.
+// Safe to call at any time while AP is running; no-op if modal already visible.
+static void show_ap_info_modal()
+{
+    if (g_ap_modal) return;  // already visible
+
+    g_ap_modal = lv_obj_create(lv_scr_act());
+    lv_obj_remove_style_all(g_ap_modal);
+    lv_obj_set_size(g_ap_modal, SCREEN_WIDTH, SCREEN_HEIGHT);
+    lv_obj_set_style_bg_color(g_ap_modal, lv_color_make(0, 60, 160), 0);
+    lv_obj_set_style_bg_opa(g_ap_modal, LV_OPA_COVER, 0);
+    lv_obj_add_flag(g_ap_modal, LV_OBJ_FLAG_CLICKABLE);
+
+    // Card
+    const int card_w = SCREEN_WIDTH  - 80;
+    const int card_h = SCREEN_HEIGHT - 140;
+    lv_obj_t* card = lv_obj_create(g_ap_modal);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_size(card, card_w, card_h);
+    lv_obj_set_style_bg_color(card, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(card, 16, 0);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_shadow_width(card, 12, 0);
+    lv_obj_set_style_shadow_opa(card, LV_OPA_40, 0);
+    lv_obj_set_style_shadow_color(card, lv_color_black(), 0);
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, 0);
+
+    // Top content container: text (left) + QR (right)
+    const int top_h = card_h - 80;
+    lv_obj_t* top = lv_obj_create(card);
+    lv_obj_remove_style_all(top);
+    lv_obj_set_size(top, LV_PCT(100), top_h);
+    lv_obj_set_style_bg_opa(top, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_column(top, 24, 0);
+    lv_obj_set_style_pad_row(top, 0, 0);
+    lv_obj_clear_flag(top, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(top, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(top, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
+
+    // LEFT: instructions (entire body comes from a single key)
+    lv_obj_t* text_col = lv_obj_create(top);
+    lv_obj_remove_style_all(text_col);
+    lv_obj_set_style_bg_opa(text_col, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(text_col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(text_col, LV_PCT(55), LV_PCT(100));
+
+    lv_obj_t* lbl = lv_label_create(text_col);
+    lv_label_set_text(lbl, tr("AP modal instructions"));
+    lv_obj_set_style_text_color(lbl, lv_color_black(), 0);
+    lv_obj_set_style_text_font(lbl, FONT_SMALL, 0);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(lbl, LV_PCT(100));
+
+    // RIGHT: QR column
+    lv_obj_t* qr_col = lv_obj_create(top);
+    lv_obj_remove_style_all(qr_col);
+    lv_obj_set_style_bg_opa(qr_col, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(qr_col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(qr_col, LV_PCT(45), LV_PCT(100));
+
+    const char* ap_url = "http://192.168.4.1";
+    const int QR_SIZE  = 180;
+#if LV_USE_QRCODE
+    lv_obj_t* qr = lv_qrcode_create(qr_col, QR_SIZE, lv_color_black(), lv_color_white());
+    lv_qrcode_update(qr, ap_url, strlen(ap_url));
+    lv_obj_align(qr, LV_ALIGN_TOP_MID, 0, 8);
+#else
+    lv_obj_t* url_lbl = lv_label_create(qr_col);
+    lv_label_set_text(url_lbl, ap_url); // URL literal (not localized)
+    lv_obj_set_style_text_color(url_lbl, lv_color_black(), 0);
+    lv_obj_set_style_text_font(url_lbl, FONT_SMALL, 0);
+    lv_obj_align(url_lbl, LV_ALIGN_TOP_MID, 0, 8);
+#endif
+    lv_obj_t* qr_help = lv_label_create(qr_col);
+    lv_label_set_text(qr_help, tr("Scan with your phone"));
+    lv_obj_set_style_text_color(qr_help, lv_color_black(), 0);
+    lv_obj_set_style_text_font(qr_help, FONT_SMALL, 0);
+    lv_obj_align(qr_help, LV_ALIGN_BOTTOM_MID, 0, -4);
+
+    // CLOSE AP button
+    lv_obj_t* btn = lv_btn_create(card);
+    lv_obj_set_size(btn, 220, 56);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_set_style_radius(btn, 10, 0);
+
+    lv_obj_t* bl = lv_label_create(btn);
+    lv_label_set_text(bl, tr("CLOSE AP"));
+    lv_obj_set_style_text_font(bl, FONT_SMALL, 0);
+    lv_obj_center(bl);
+
+    lv_obj_add_event_cb(btn, ap_export_close_btn_cb, LV_EVENT_CLICKED, NULL);
+}
+
+// Tap handler for the AP header button — shows the AP info modal
+static void on_ap_badge_clicked(lv_event_t* /*e*/)
+{
+    if (!g_ap_running) return;
+    show_ap_info_modal();
+}
+
 // Animate simulation buttons based on real gate state
 void gui_set_sim_button_state(int gate_index, bool active) {
   lv_obj_t* btn = nullptr;
@@ -299,93 +400,7 @@ static void on_sw_ap_changed(lv_event_t* e)
         if (g_hdr_ap_badge) lv_obj_clear_flag(g_hdr_ap_badge, LV_OBJ_FLAG_HIDDEN);
         screensaver_set_apweb_hold(true);
 
-        if (!g_ap_modal) {
-            g_ap_modal = lv_obj_create(lv_scr_act());
-            lv_obj_remove_style_all(g_ap_modal);
-            lv_obj_set_size(g_ap_modal, SCREEN_WIDTH, SCREEN_HEIGHT);
-            lv_obj_set_style_bg_color(g_ap_modal, lv_color_make(0, 60, 160), 0);
-            lv_obj_set_style_bg_opa(g_ap_modal, LV_OPA_COVER, 0);
-            lv_obj_add_flag(g_ap_modal, LV_OBJ_FLAG_CLICKABLE);
-
-            // Card
-            const int card_w = SCREEN_WIDTH  - 80;
-            const int card_h = SCREEN_HEIGHT - 140;
-            lv_obj_t* card = lv_obj_create(g_ap_modal);
-            lv_obj_remove_style_all(card);
-            lv_obj_set_size(card, card_w, card_h);
-            lv_obj_set_style_bg_color(card, lv_color_white(), 0);
-            lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-            lv_obj_set_style_radius(card, 16, 0);
-            lv_obj_set_style_pad_all(card, 24, 0);
-            lv_obj_set_style_shadow_width(card, 12, 0);
-            lv_obj_set_style_shadow_opa(card, LV_OPA_40, 0);
-            lv_obj_set_style_shadow_color(card, lv_color_black(), 0);
-            lv_obj_align(card, LV_ALIGN_CENTER, 0, 0);
-
-            // Top content container: text (left) + QR (right)
-            const int top_h = card_h - 80;
-            lv_obj_t* top = lv_obj_create(card);
-            lv_obj_remove_style_all(top);
-            lv_obj_set_size(top, LV_PCT(100), top_h);
-            lv_obj_set_style_bg_opa(top, LV_OPA_TRANSP, 0);
-            lv_obj_set_style_pad_column(top, 24, 0);
-            lv_obj_set_style_pad_row(top, 0, 0);
-            lv_obj_clear_flag(top, LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_set_flex_flow(top, LV_FLEX_FLOW_ROW);
-            lv_obj_set_flex_align(top, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
-
-            // LEFT: instructions (entire body comes from a single key)
-            lv_obj_t* text_col = lv_obj_create(top);
-            lv_obj_remove_style_all(text_col);
-            lv_obj_set_style_bg_opa(text_col, LV_OPA_TRANSP, 0);
-            lv_obj_clear_flag(text_col, LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_set_size(text_col, LV_PCT(55), LV_PCT(100));
-
-            lv_obj_t* lbl = lv_label_create(text_col);
-            lv_label_set_text(lbl, tr("AP modal instructions"));  // <—— your key
-            lv_obj_set_style_text_color(lbl, lv_color_black(), 0);
-            lv_obj_set_style_text_font(lbl, &ui_font_16, 0);
-            lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
-            lv_obj_set_width(lbl, LV_PCT(100));
-
-            // RIGHT: QR column
-            lv_obj_t* qr_col = lv_obj_create(top);
-            lv_obj_remove_style_all(qr_col);
-            lv_obj_set_style_bg_opa(qr_col, LV_OPA_TRANSP, 0);
-            lv_obj_clear_flag(qr_col, LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_set_size(qr_col, LV_PCT(45), LV_PCT(100));
-
-            const char* ap_url = "http://192.168.4.1";
-            const int QR_SIZE  = 180;
-        #if LV_USE_QRCODE
-            lv_obj_t* qr = lv_qrcode_create(qr_col, QR_SIZE, lv_color_black(), lv_color_white());
-            lv_qrcode_update(qr, ap_url, strlen(ap_url));
-            lv_obj_align(qr, LV_ALIGN_TOP_MID, 0, 8);
-        #else
-            lv_obj_t* url_lbl = lv_label_create(qr_col);
-            lv_label_set_text(url_lbl, ap_url); // URL literal (not localized)
-            lv_obj_set_style_text_color(url_lbl, lv_color_black(), 0);
-            lv_obj_set_style_text_font(url_lbl, &ui_font_16, 0);
-            lv_obj_align(url_lbl, LV_ALIGN_TOP_MID, 0, 8);
-        #endif
-            lv_obj_t* qr_help = lv_label_create(qr_col);
-            lv_label_set_text(qr_help, tr("Scan with your phone"));
-            lv_obj_set_style_text_color(qr_help, lv_color_black(), 0);
-            lv_obj_set_style_text_font(qr_help, &ui_font_16, 0);
-            lv_obj_align(qr_help, LV_ALIGN_BOTTOM_MID, 0, -4);
-
-            // CLOSE AP button
-            lv_obj_t* btn = lv_btn_create(card);
-            lv_obj_set_size(btn, 220, 56);
-            lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -12);
-            lv_obj_set_style_radius(btn, 10, 0);
-
-            lv_obj_t* bl = lv_label_create(btn);
-            lv_label_set_text(bl, tr("CLOSE AP"));
-            lv_obj_center(bl);
-
-            lv_obj_add_event_cb(btn, ap_export_close_btn_cb, LV_EVENT_CLICKED, NULL);
-        }
+        show_ap_info_modal();
     } else {
         // OFF → stop AP + modal
         ap_export_stop();
@@ -1218,6 +1233,7 @@ static void header_stop_and_clear()
   // Unified header pointers (old g_hdr_wifi_icon / g_hdr_inet_led are no longer used)
   g_hdr_net_icon = nullptr;
   g_hdr_ap_badge = nullptr;
+  g_ap_modal     = nullptr;  // modal is a child of the old screen, now freed
   g_hdr_settings = nullptr;
   g_header_title = nullptr;
   g_header       = nullptr;
@@ -1423,12 +1439,23 @@ static lv_obj_t* build_header(lv_obj_t* scr, const char* title_text)
   // HIDE WiFi icon - we only show AP badge
   lv_obj_add_flag(g_hdr_net_icon, LV_OBJ_FLAG_HIDDEN);
 
-  // Tiny "AP" text badge (standalone, no WiFi icon)
-  g_hdr_ap_badge = lv_label_create(left);
-  lv_label_set_text(g_hdr_ap_badge, "AP");
-  lv_obj_set_style_text_font(g_hdr_ap_badge, FONT_SMALL, 0);
-  lv_obj_set_style_text_color(g_hdr_ap_badge, lv_color_hex(0x00E07A), 0);
-  // AP badge appears in the flex layout of 'left' container (after back button)
+  // Wide AP button — large touch target, tappable to re-open AP info modal
+  g_hdr_ap_badge = lv_btn_create(left);
+  lv_obj_set_size(g_hdr_ap_badge, 100, 40);
+  lv_obj_set_style_radius(g_hdr_ap_badge, 8, 0);
+  lv_obj_set_style_bg_color(g_hdr_ap_badge, lv_color_hex(0x1a3a1a), 0);
+  lv_obj_set_style_bg_opa(g_hdr_ap_badge, LV_OPA_90, 0);
+  lv_obj_set_style_border_color(g_hdr_ap_badge, lv_color_hex(0x00E07A), 0);
+  lv_obj_set_style_border_width(g_hdr_ap_badge, 1, 0);
+  lv_obj_set_style_shadow_opa(g_hdr_ap_badge, LV_OPA_TRANSP, 0);
+  lv_obj_add_event_cb(g_hdr_ap_badge, on_ap_badge_clicked, LV_EVENT_CLICKED, nullptr);
+  {
+    lv_obj_t* lbl = lv_label_create(g_hdr_ap_badge);
+    lv_label_set_text(lbl, "AP");
+    lv_obj_set_style_text_font(lbl, FONT_SMALL, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0x00E07A), 0);
+    lv_obj_center(lbl);
+  }
   // Hidden by default, shown when AP is running
   if (!g_ap_running) lv_obj_add_flag(g_hdr_ap_badge, LV_OBJ_FLAG_HIDDEN);
 
