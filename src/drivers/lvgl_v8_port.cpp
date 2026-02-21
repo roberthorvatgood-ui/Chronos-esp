@@ -287,8 +287,9 @@ static void lvgl_port_task(void *arg)
       lvgl_port_unlock();
     }
 
-    if (delay_ms > LVGL_PORT_TASK_MAX_DELAY_MS)
-      delay_ms = LVGL_PORT_TASK_MAX_DELAY_MS;
+    // Cap at LVGL_PORT_TASK_REFRESH_DELAY_MS (60 Hz minimum) to prevent 500ms gaps under load
+    if (delay_ms > LVGL_PORT_TASK_REFRESH_DELAY_MS)
+      delay_ms = LVGL_PORT_TASK_REFRESH_DELAY_MS;
     else if (delay_ms < LVGL_PORT_TASK_MIN_DELAY_MS)
       delay_ms = LVGL_PORT_TASK_MIN_DELAY_MS;
 

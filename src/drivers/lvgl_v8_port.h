@@ -20,8 +20,9 @@
 // Task config
 #define LVGL_PORT_TASK_MAX_DELAY_MS (500)
 #define LVGL_PORT_TASK_MIN_DELAY_MS (2)
+#define LVGL_PORT_TASK_REFRESH_DELAY_MS (16)  // Minimum 60 Hz refresh rate cap
 #define LVGL_PORT_TASK_STACK_SIZE (6 * 1024)
-#define LVGL_PORT_TASK_PRIORITY (2)
+#define LVGL_PORT_TASK_PRIORITY (5)  // Higher priority ensures display doesn't get starved by WiFi/network tasks
 
 #ifdef ARDUINO_RUNNING_CORE
  #define LVGL_PORT_TASK_CORE (ARDUINO_RUNNING_CORE)

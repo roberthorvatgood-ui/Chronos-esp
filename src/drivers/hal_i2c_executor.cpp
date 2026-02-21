@@ -104,6 +104,16 @@ esp_err_t hal_i2c_exec_sync(hal_i2c_request_fn_t op, void* ctx, uint32_t timeout
     return ESP_ERR_TIMEOUT;
   }
 
+  // Monitor queue depth; warn when contention is high (diagnostic only, volatile for cross-task visibility)
+  static volatile int max_queue_depth = 0;
+  int cur_depth = (int)uxQueueMessagesWaiting(s_reqq);
+  if (cur_depth > max_queue_depth) {
+    max_queue_depth = cur_depth;
+    if (cur_depth > 20) {
+      ESP_LOGW(TAG, "I2C queue depth warning: %d/%u", cur_depth, (unsigned)s_queue_len);
+    }
+  }
+
   // Wait for completion
   if (xSemaphoreTake(item.done, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
     vSemaphoreDelete(item.done);

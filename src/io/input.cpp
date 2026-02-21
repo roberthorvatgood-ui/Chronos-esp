@@ -50,7 +50,7 @@ static bool    sB_last  = true;
 //   pulse while still leaving headroom for GT911 touch on Core 1.
 // ────────────────────────────────────────────────────────────────────────
 static constexpr uint8_t STABLE_COUNT = 1;
-static const unsigned long POLL_PERIOD_MS = 2; // was 5 → now 500 Hz
+static const unsigned long POLL_PERIOD_MS = 5; // 200 Hz — sufficient for optical gates, reduces I²C load by 60%
 
 // Pause flag
 static bool sPaused = false;
